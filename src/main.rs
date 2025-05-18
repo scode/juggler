@@ -14,10 +14,18 @@ fn main() -> io::Result<()> {
     app_result
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     exit: bool,
     state: ListState,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let mut state = ListState::default();
+        state.select(Some(0));
+        App { exit: false, state }
+    }
 }
 
 impl App {
