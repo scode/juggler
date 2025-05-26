@@ -1,4 +1,4 @@
-use std::io;
+use std::{fs, io};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -6,6 +6,13 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, List, ListState},
 };
+
+fn load_todos() -> io::Result<Vec<String>> {
+    let content = fs::read_to_string("TODOs.yaml")?;
+    let todos: Vec<String> = serde_yaml::from_str(&content)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(todos)
+}
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -18,13 +25,19 @@ fn main() -> io::Result<()> {
 pub struct App {
     exit: bool,
     state: ListState,
+    items: Vec<String>,
 }
 
 impl Default for App {
     fn default() -> Self {
         let mut state = ListState::default();
         state.select(Some(0));
-        App { exit: false, state }
+        let items = load_todos().unwrap_or_default();
+        App {
+            exit: false,
+            state,
+            items,
+        }
     }
 }
 
@@ -38,8 +51,12 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let items = vec!["Item 1", "Item 2", "Item 3"];
-        let list_widget = List::new(items)
+        let list_items = self
+            .items
+            .iter()
+            .map(|i| ratatui::widgets::ListItem::new(i.as_str()))
+            .collect::<Vec<_>>();
+        let list_widget = List::new(list_items)
             .block(Block::default().title("TODOs"))
             .highlight_style(Style::default().fg(Color::Yellow));
         frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
