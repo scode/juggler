@@ -4,14 +4,35 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Style},
+    text::Text,
     widgets::{Block, List, ListState},
 };
 
-fn load_todos() -> io::Result<Vec<String>> {
+#[derive(Debug, serde::Deserialize)]
+struct TodoConfig {
+    title: String,
+    comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Todo {
+    title: String,
+    comment: Option<String>,
+    expanded: bool,
+}
+
+fn load_todos() -> io::Result<Vec<Todo>> {
     let content = fs::read_to_string("TODOs.yaml")?;
-    let todos: Vec<String> = serde_yaml::from_str(&content)
+    let configs: Vec<TodoConfig> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(todos)
+    Ok(configs
+        .into_iter()
+        .map(|c| Todo {
+            title: c.title,
+            comment: c.comment,
+            expanded: false,
+        })
+        .collect())
 }
 
 fn main() -> io::Result<()> {
@@ -25,7 +46,7 @@ fn main() -> io::Result<()> {
 pub struct App {
     exit: bool,
     state: ListState,
-    items: Vec<String>,
+    items: Vec<Todo>,
 }
 
 impl Default for App {
@@ -54,11 +75,23 @@ impl App {
         let list_items = self
             .items
             .iter()
-            .map(|i| ratatui::widgets::ListItem::new(i.as_str()))
+            .map(|todo| {
+                if todo.expanded {
+                    let mut text = todo.title.clone();
+                    if let Some(comment) = &todo.comment {
+                        text.push('\n');
+                        text.push_str(comment);
+                    }
+                    ratatui::widgets::ListItem::new(Text::from(text))
+                } else {
+                    ratatui::widgets::ListItem::new(Text::from(todo.title.as_str()))
+                }
+            })
             .collect::<Vec<_>>();
         let list_widget = List::new(list_items)
             .block(Block::default().title("TODOs"))
-            .highlight_style(Style::default().fg(Color::Yellow));
+            .highlight_style(Style::default().fg(Color::Yellow))
+            .repeat_highlight_symbol(true);
         frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
     }
 
@@ -80,7 +113,16 @@ impl App {
             KeyCode::Up => self.state.select_previous(),
             KeyCode::Char('j') => self.state.select_next(),
             KeyCode::Char('k') => self.state.select_previous(),
+            KeyCode::Char('o') => self.toggle_selected(),
             _ => {}
+        }
+    }
+
+    fn toggle_selected(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.expanded = !item.expanded;
+            }
         }
     }
 
@@ -92,12 +134,36 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
 
     #[test]
-    fn render() {}
+    fn load_todos_parses_comments() {
+        let todos = load_todos().expect("load TODOs");
+        assert_eq!(todos.len(), 3);
+        assert_eq!(todos[0].title, "Item 1");
+        let comment = todos[0].comment.as_deref().expect("comment for first item");
+        assert!(comment.starts_with("This is a comment for item 1."));
+        assert!(comment.contains("It can span multiple lines."));
+        assert!(!todos[0].expanded);
+    }
 
     #[test]
-    fn handle_key_event() -> io::Result<()> {
-        Ok(())
+    fn toggle_selected_via_key_event() {
+        let mut state = ListState::default();
+        state.select(Some(0));
+        let mut app = App {
+            exit: false,
+            state,
+            items: vec![Todo {
+                title: String::from("a"),
+                comment: Some(String::from("comment")),
+                expanded: false,
+            }],
+        };
+
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        assert!(app.items[0].expanded);
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        assert!(!app.items[0].expanded);
     }
 }
