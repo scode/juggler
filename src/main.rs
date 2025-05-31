@@ -5,8 +5,10 @@ use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Style},
     text::Text,
-    widgets::{Block, List, ListState},
+    widgets::{Block, Borders, List, ListState, Paragraph},
 };
+
+const HELP_TEXT: &str = "o - open, j - select next, k - select previous, q - quit";
 
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
@@ -101,13 +103,21 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let list_height = area.height.saturating_sub(2);
+        let list_area = ratatui::layout::Rect::new(area.x, area.y, area.width, list_height);
+        let help_area = ratatui::layout::Rect::new(area.x, area.y + list_height, area.width, 2);
+
         let list_items = (0..self.items.len())
             .map(|i| ratatui::widgets::ListItem::new(Text::from(self.display_text(i))))
             .collect::<Vec<_>>();
         let list_widget = List::new(list_items)
             .block(Block::default().title("TODOs"))
             .highlight_style(Style::default().fg(Color::Yellow));
-        frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
+        frame.render_stateful_widget(list_widget, list_area, &mut self.state);
+
+        let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+        frame.render_widget(help_widget, help_area);
     }
 
     fn display_text(&self, index: usize) -> String {
@@ -252,5 +262,13 @@ mod tests {
 
         assert_eq!(app.display_text(0), ">> a");
         assert_eq!(app.display_text(1), "   b\n      c1\n      c2");
+    }
+
+    #[test]
+    fn help_text_includes_key_binds() {
+        assert!(HELP_TEXT.contains("o - open"));
+        assert!(HELP_TEXT.contains("j - select next"));
+        assert!(HELP_TEXT.contains("k - select previous"));
+        assert!(HELP_TEXT.contains("q - quit"));
     }
 }
