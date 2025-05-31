@@ -101,22 +101,28 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let list_items = self
-            .items
-            .iter()
-            .map(|todo| {
-                if todo.expanded {
-                    ratatui::widgets::ListItem::new(Text::from(todo.expanded_text()))
-                } else {
-                    ratatui::widgets::ListItem::new(Text::from(todo.collapsed_summary()))
-                }
-            })
+        let list_items = (0..self.items.len())
+            .map(|i| ratatui::widgets::ListItem::new(Text::from(self.display_text(i))))
             .collect::<Vec<_>>();
         let list_widget = List::new(list_items)
             .block(Block::default().title("TODOs"))
-            .highlight_style(Style::default().fg(Color::Yellow))
-            .repeat_highlight_symbol(true);
+            .highlight_style(Style::default().fg(Color::Yellow));
         frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
+    }
+
+    fn display_text(&self, index: usize) -> String {
+        let todo = &self.items[index];
+        let base = if todo.expanded {
+            todo.expanded_text()
+        } else {
+            todo.collapsed_summary()
+        };
+        let prefix = if Some(index) == self.state.selected() {
+            ">> "
+        } else {
+            "   "
+        };
+        format!("{}{}", prefix, base)
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -216,5 +222,30 @@ mod tests {
             expanded: true,
         };
         assert_eq!(todo.expanded_text(), "a\n   line1\n   line2");
+    }
+
+    #[test]
+    fn display_text_prefixes_cursor() {
+        let mut state = ListState::default();
+        state.select(Some(0));
+        let app = App {
+            exit: false,
+            state,
+            items: vec![
+                Todo {
+                    title: String::from("a"),
+                    comment: None,
+                    expanded: false,
+                },
+                Todo {
+                    title: String::from("b"),
+                    comment: None,
+                    expanded: false,
+                },
+            ],
+        };
+
+        assert_eq!(app.display_text(0), ">> a");
+        assert_eq!(app.display_text(1), "   b");
     }
 }
