@@ -1,3 +1,7 @@
-- Item 1
-- Item 2
-- Item 3
+- title: Item 1
+  comment: |
+    This is a comment for item 1.
+    It can span multiple lines.
+- title: Item 2
+  comment: Another comment for item 2.
+- title: Item 3

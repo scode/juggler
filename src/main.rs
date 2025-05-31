@@ -4,14 +4,35 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Style},
+    text::Text,
     widgets::{Block, List, ListState},
 };
 
-fn load_todos() -> io::Result<Vec<String>> {
+#[derive(Debug, serde::Deserialize)]
+struct TodoConfig {
+    title: String,
+    comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Todo {
+    title: String,
+    comment: Option<String>,
+    expanded: bool,
+}
+
+fn load_todos() -> io::Result<Vec<Todo>> {
     let content = fs::read_to_string("TODOs.yaml")?;
-    let todos: Vec<String> = serde_yaml::from_str(&content)
+    let configs: Vec<TodoConfig> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(todos)
+    Ok(configs
+        .into_iter()
+        .map(|c| Todo {
+            title: c.title,
+            comment: c.comment,
+            expanded: false,
+        })
+        .collect())
 }
 
 fn main() -> io::Result<()> {
@@ -25,7 +46,7 @@ fn main() -> io::Result<()> {
 pub struct App {
     exit: bool,
     state: ListState,
-    items: Vec<String>,
+    items: Vec<Todo>,
 }
 
 impl Default for App {
@@ -54,11 +75,23 @@ impl App {
         let list_items = self
             .items
             .iter()
-            .map(|i| ratatui::widgets::ListItem::new(i.as_str()))
+            .map(|todo| {
+                if todo.expanded {
+                    let mut text = todo.title.clone();
+                    if let Some(comment) = &todo.comment {
+                        text.push('\n');
+                        text.push_str(comment);
+                    }
+                    ratatui::widgets::ListItem::new(Text::from(text))
+                } else {
+                    ratatui::widgets::ListItem::new(Text::from(todo.title.as_str()))
+                }
+            })
             .collect::<Vec<_>>();
         let list_widget = List::new(list_items)
             .block(Block::default().title("TODOs"))
-            .highlight_style(Style::default().fg(Color::Yellow));
+            .highlight_style(Style::default().fg(Color::Yellow))
+            .repeat_highlight_symbol(true);
         frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
     }
 
@@ -80,7 +113,16 @@ impl App {
             KeyCode::Up => self.state.select_previous(),
             KeyCode::Char('j') => self.state.select_next(),
             KeyCode::Char('k') => self.state.select_previous(),
+            KeyCode::Char('o') => self.toggle_selected(),
             _ => {}
+        }
+    }
+
+    fn toggle_selected(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.expanded = !item.expanded;
+            }
         }
     }
 
