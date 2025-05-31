@@ -34,6 +34,20 @@ impl Todo {
         }
         text
     }
+
+    fn expanded_text(&self) -> String {
+        let mut text = self.title.clone();
+        if let Some(comment) = &self.comment {
+            text.push('\n');
+            let indented = comment
+                .lines()
+                .map(|line| format!("   {}", line))
+                .collect::<Vec<_>>()
+                .join("\n");
+            text.push_str(&indented);
+        }
+        text
+    }
 }
 
 fn load_todos() -> io::Result<Vec<Todo>> {
@@ -92,12 +106,7 @@ impl App {
             .iter()
             .map(|todo| {
                 if todo.expanded {
-                    let mut text = todo.title.clone();
-                    if let Some(comment) = &todo.comment {
-                        text.push('\n');
-                        text.push_str(comment);
-                    }
-                    ratatui::widgets::ListItem::new(Text::from(text))
+                    ratatui::widgets::ListItem::new(Text::from(todo.expanded_text()))
                 } else {
                     ratatui::widgets::ListItem::new(Text::from(todo.collapsed_summary()))
                 }
@@ -197,5 +206,15 @@ mod tests {
             expanded: false,
         };
         assert_eq!(without_comment.collapsed_summary(), "b");
+    }
+
+    #[test]
+    fn expanded_text_indents_comment() {
+        let todo = Todo {
+            title: String::from("a"),
+            comment: Some(String::from("line1\nline2")),
+            expanded: true,
+        };
+        assert_eq!(todo.expanded_text(), "a\n   line1\n   line2");
     }
 }
