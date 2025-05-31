@@ -10,6 +10,11 @@ use ratatui::{
 
 const HELP_TEXT: &str = "o - open, j - select next, k - select previous, q - quit";
 
+const KEY_QUIT: KeyCode = KeyCode::Char('q');
+const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
+const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
+const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
+
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
     title: String,
@@ -153,12 +158,10 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         //dbg!(key_event);
         match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Down => self.state.select_next(),
-            KeyCode::Up => self.state.select_previous(),
-            KeyCode::Char('j') => self.state.select_next(),
-            KeyCode::Char('k') => self.state.select_previous(),
-            KeyCode::Char('o') => self.toggle_selected(),
+            KEY_QUIT => self.exit(),
+            KEY_NEXT_ITEM => self.state.select_next(),
+            KEY_PREVIOUS_ITEM => self.state.select_previous(),
+            KEY_TOGGLE_EXPAND => self.toggle_selected(),
             _ => {}
         }
     }
@@ -206,9 +209,9 @@ mod tests {
             }],
         };
 
-        app.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
         assert!(app.items[0].expanded);
-        app.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
         assert!(!app.items[0].expanded);
     }
 
