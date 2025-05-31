@@ -3,10 +3,13 @@ use std::{fs, io};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Text,
-    widgets::{Block, List, ListState},
+    widgets::{Block, List, ListState, Paragraph},
 };
+
+const HELP_TEXT: &str = "o - open, j - select next, k - select previous, q - quit";
 
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
@@ -107,7 +110,24 @@ impl App {
             .block(Block::default().title("TODOs"))
             .highlight_style(Style::default().fg(Color::Yellow))
             .repeat_highlight_symbol(true);
-        frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
+
+        let layout = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Min(0),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
+        )
+        .split(frame.area());
+
+        frame.render_stateful_widget(list_widget, layout[0], &mut self.state);
+
+        let bar = Paragraph::new("─".repeat(layout[1].width as usize));
+        frame.render_widget(bar, layout[1]);
+
+        let help = Paragraph::new(HELP_TEXT);
+        frame.render_widget(help, layout[2]);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -197,5 +217,33 @@ mod tests {
             expanded: false,
         };
         assert_eq!(without_comment.collapsed_summary(), "b");
+    }
+
+    #[test]
+    fn help_text_constant_matches_expected() {
+        assert!(HELP_TEXT.contains("o - open"));
+        assert!(HELP_TEXT.contains("j - select next"));
+        assert!(HELP_TEXT.contains("k - select previous"));
+        assert!(HELP_TEXT.contains("q - quit"));
+    }
+
+    #[test]
+    fn draw_renders_help_text_on_bottom_line() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let backend = TestBackend::new(HELP_TEXT.len() as u16 + 2, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = App::default();
+
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let buffer = terminal.backend().buffer();
+
+        let y = buffer.area().height - 1;
+        let mut line = String::new();
+        for x in 0..buffer.area().width {
+            line.push_str(buffer.get(x, y).symbol());
+        }
+
+        assert!(line.trim_end().contains(HELP_TEXT));
     }
 }
