@@ -21,6 +21,21 @@ struct Todo {
     expanded: bool,
 }
 
+impl Todo {
+    fn collapsed_summary(&self) -> String {
+        let mut text = self.title.clone();
+        if self
+            .comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+        {
+            text.push('>');
+        }
+        text
+    }
+}
+
 fn load_todos() -> io::Result<Vec<Todo>> {
     let content = fs::read_to_string("TODOs.yaml")?;
     let configs: Vec<TodoConfig> = serde_yaml::from_str(&content)
@@ -84,7 +99,7 @@ impl App {
                     }
                     ratatui::widgets::ListItem::new(Text::from(text))
                 } else {
-                    ratatui::widgets::ListItem::new(Text::from(todo.title.as_str()))
+                    ratatui::widgets::ListItem::new(Text::from(todo.collapsed_summary()))
                 }
             })
             .collect::<Vec<_>>();
@@ -165,5 +180,22 @@ mod tests {
         assert!(app.items[0].expanded);
         app.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
         assert!(!app.items[0].expanded);
+    }
+
+    #[test]
+    fn collapsed_summary_marks_expandable_items() {
+        let with_comment = Todo {
+            title: String::from("a"),
+            comment: Some(String::from("comment")),
+            expanded: false,
+        };
+        assert_eq!(with_comment.collapsed_summary(), "a>");
+
+        let without_comment = Todo {
+            title: String::from("b"),
+            comment: None,
+            expanded: false,
+        };
+        assert_eq!(without_comment.collapsed_summary(), "b");
     }
 }
