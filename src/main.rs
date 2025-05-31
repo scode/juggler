@@ -3,9 +3,10 @@ use std::{fs, io};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Text,
-    widgets::{Block, List, ListState},
+    widgets::{Block, List, ListState, Paragraph},
 };
 
 #[derive(Debug, serde::Deserialize)]
@@ -107,7 +108,26 @@ impl App {
             .block(Block::default().title("TODOs"))
             .highlight_style(Style::default().fg(Color::Yellow))
             .repeat_highlight_symbol(true);
-        frame.render_stateful_widget(list_widget, frame.area(), &mut self.state);
+
+        let help_text = "o - open, j - select next, k - select previous, q - quit";
+
+        let layout = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Min(0),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
+        )
+        .split(frame.area());
+
+        frame.render_stateful_widget(list_widget, layout[0], &mut self.state);
+
+        let bar = Paragraph::new("─".repeat(layout[1].width as usize));
+        frame.render_widget(bar, layout[1]);
+
+        let help = Paragraph::new(help_text);
+        frame.render_widget(help, layout[2]);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
