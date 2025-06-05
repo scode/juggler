@@ -8,17 +8,20 @@ use ratatui::{
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
-const HELP_TEXT: &str = "o - open, j - select next, k - select previous, q - quit";
+const HELP_TEXT: &str = "o - open, j - select next, k - select previous, e - toggle done, q - quit";
 
 const KEY_QUIT: KeyCode = KeyCode::Char('q');
 const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
 const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
 const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
+const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
 
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
     title: String,
     comment: Option<String>,
+    #[serde(default)]
+    done: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +29,7 @@ struct Todo {
     title: String,
     comment: Option<String>,
     expanded: bool,
+    done: bool,
 }
 
 impl Todo {
@@ -76,6 +80,7 @@ fn load_todos() -> io::Result<Vec<Todo>> {
             title: c.title,
             comment: c.comment,
             expanded: false,
+            done: c.done,
         })
         .collect())
 }
@@ -93,6 +98,7 @@ pub struct App {
     exit: bool,
     state: ListState,
     items: Vec<Todo>,
+    pending_count: usize,
 }
 
 impl App {
@@ -104,10 +110,13 @@ impl App {
             state.select(Some(0));
         }
 
+        let pending_count = items.iter().filter(|item| !item.done).count();
+
         Ok(App {
             exit: false,
             state,
             items,
+            pending_count,
         })
     }
 }
@@ -128,18 +137,91 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        let list_height = area.height.saturating_sub(2);
-        let list_area = ratatui::layout::Rect::new(area.x, area.y, area.width, list_height);
-        let help_area = ratatui::layout::Rect::new(area.x, area.y + list_height, area.width, 2);
+        use ratatui::layout::{Constraint, Direction, Layout};
 
-        let list_items = (0..self.items.len())
-            .map(|i| ratatui::widgets::ListItem::new(Text::from(self.display_text(i))))
-            .collect::<Vec<_>>();
-        let list_widget = List::new(list_items)
-            .block(Block::default().title("TODOs"))
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(area);
+
+        let main_area = chunks[0];
+        let help_area = chunks[1];
+
+        // Split main area between pending and done sections
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Min(1)])
+            .split(main_area);
+
+        // Render pending section
+        let pending_items: Vec<_> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| !item.done)
+            .map(|(original_idx, _)| {
+                ratatui::widgets::ListItem::new(Text::from(self.display_text(original_idx)))
+            })
+            .collect();
+
+        let pending_widget = List::new(pending_items)
+            .block(Block::default().title("Pending").borders(Borders::ALL))
             .highlight_style(Style::default().fg(Color::Yellow));
-        frame.render_stateful_widget(list_widget, list_area, &mut self.state);
+
+        // Render done section
+        let done_items: Vec<_> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.done)
+            .map(|(original_idx, _)| {
+                ratatui::widgets::ListItem::new(Text::from(self.display_text(original_idx)))
+            })
+            .collect();
+
+        let done_widget = List::new(done_items)
+            .block(Block::default().title("Done").borders(Borders::ALL))
+            .highlight_style(Style::default().fg(Color::Green));
+
+        // Determine which section to highlight based on selection
+        if let Some(selected_idx) = self.state.selected() {
+            if let Some(selected_item) = self.items.get(selected_idx) {
+                if selected_item.done {
+                    // Highlight done section
+                    frame.render_widget(pending_widget, sections[0]);
+                    let mut done_state = ListState::default();
+                    let done_count = self.items[..=selected_idx]
+                        .iter()
+                        .filter(|item| item.done)
+                        .count();
+                    if done_count > 0 {
+                        done_state.select(Some(done_count - 1));
+                    }
+                    frame.render_stateful_widget(done_widget, sections[1], &mut done_state);
+                } else {
+                    // Highlight pending section
+                    let mut pending_state = ListState::default();
+                    let pending_count = self.items[..=selected_idx]
+                        .iter()
+                        .filter(|item| !item.done)
+                        .count();
+                    if pending_count > 0 {
+                        pending_state.select(Some(pending_count - 1));
+                    }
+                    frame.render_stateful_widget(pending_widget, sections[0], &mut pending_state);
+                    frame.render_widget(done_widget, sections[1]);
+                }
+            } else {
+                // No valid selection, render both without highlighting
+                frame.render_widget(pending_widget, sections[0]);
+                frame.render_widget(done_widget, sections[1]);
+            }
+        } else {
+            // No selection, render both without highlighting
+            frame.render_widget(pending_widget, sections[0]);
+            frame.render_widget(done_widget, sections[1]);
+        }
 
         let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
         frame.render_widget(help_widget, help_area);
@@ -176,9 +258,10 @@ impl App {
         //dbg!(key_event);
         match key_event.code {
             KEY_QUIT => self.exit(),
-            KEY_NEXT_ITEM => self.state.select_next(),
-            KEY_PREVIOUS_ITEM => self.state.select_previous(),
+            KEY_NEXT_ITEM => self.select_next(),
+            KEY_PREVIOUS_ITEM => self.select_previous(),
             KEY_TOGGLE_EXPAND => self.toggle_selected(),
+            KEY_TOGGLE_DONE => self.toggle_done(),
             _ => {}
         }
     }
@@ -187,6 +270,38 @@ impl App {
         if let Some(i) = self.state.selected() {
             if let Some(item) = self.items.get_mut(i) {
                 item.expanded = !item.expanded;
+            }
+        }
+    }
+
+    fn select_next(&mut self) {
+        let len = self.items.len();
+        if len == 0 {
+            return;
+        }
+
+        let current = self.state.selected().unwrap_or(0);
+        let next = if current + 1 >= len { 0 } else { current + 1 };
+        self.state.select(Some(next));
+    }
+
+    fn select_previous(&mut self) {
+        let len = self.items.len();
+        if len == 0 {
+            return;
+        }
+
+        let current = self.state.selected().unwrap_or(0);
+        let previous = if current == 0 { len - 1 } else { current - 1 };
+        self.state.select(Some(previous));
+    }
+
+    fn toggle_done(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.done = !item.done;
+                // Update pending count
+                self.pending_count = self.items.iter().filter(|item| !item.done).count();
             }
         }
     }
@@ -204,7 +319,7 @@ mod tests {
     #[test]
     fn load_todos_parses_comments() {
         let todos = load_todos().expect("load TODOs");
-        assert_eq!(todos.len(), 3);
+        assert_eq!(todos.len(), 4);
         assert_eq!(todos[0].title, "Item 1");
         let comment = todos[0].comment.as_deref().expect("comment for first item");
         assert!(comment.starts_with("This is a comment for item 1."));
@@ -223,7 +338,9 @@ mod tests {
                 title: String::from("a"),
                 comment: Some(String::from("comment")),
                 expanded: false,
+                done: false,
             }],
+            pending_count: 1,
         };
 
         app.handle_key_event(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
@@ -238,6 +355,7 @@ mod tests {
             title: String::from("a"),
             comment: Some(String::from("comment")),
             expanded: false,
+            done: false,
         };
         assert_eq!(with_comment.collapsed_summary(), "a 📋");
 
@@ -245,6 +363,7 @@ mod tests {
             title: String::from("b"),
             comment: None,
             expanded: false,
+            done: false,
         };
         assert_eq!(without_comment.collapsed_summary(), "b");
     }
@@ -255,6 +374,7 @@ mod tests {
             title: String::from("a"),
             comment: Some(String::from("line1\nline2")),
             expanded: true,
+            done: false,
         };
         assert_eq!(todo.expanded_text(), "a 📖\n      line1\n      line2");
     }
@@ -271,13 +391,16 @@ mod tests {
                     title: String::from("a"),
                     comment: None,
                     expanded: false,
+                    done: false,
                 },
                 Todo {
                     title: String::from("b"),
                     comment: Some(String::from("c1\nc2")),
                     expanded: true,
+                    done: false,
                 },
             ],
+            pending_count: 2,
         };
 
         assert_eq!(app.display_text(0), "▶ a");
@@ -291,6 +414,7 @@ mod tests {
             title: String::from("Task with details"),
             comment: Some(String::from("Some details")),
             expanded: false,
+            done: false,
         };
         assert_eq!(
             collapsed_with_comment.collapsed_summary(),
@@ -302,6 +426,7 @@ mod tests {
             title: String::from("Task with details"),
             comment: Some(String::from("Some details")),
             expanded: true,
+            done: false,
         };
         assert_eq!(
             expanded_with_comment.expanded_text(),
@@ -313,6 +438,7 @@ mod tests {
             title: String::from("Simple task"),
             comment: None,
             expanded: false,
+            done: false,
         };
         assert_eq!(no_comment.collapsed_summary(), "Simple task");
 
@@ -321,6 +447,7 @@ mod tests {
             title: String::from("Task with empty comment"),
             comment: Some(String::from("   ")),
             expanded: false,
+            done: false,
         };
         assert_eq!(empty_comment.collapsed_summary(), "Task with empty comment");
     }
@@ -329,13 +456,14 @@ mod tests {
     fn draw_displays_help_text() {
         use ratatui::{Terminal, backend::TestBackend};
 
-        let backend = TestBackend::new(60, 3);
+        let backend = TestBackend::new(80, 10);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = App {
             exit: false,
             state: ListState::default(),
             items: Vec::new(),
+            pending_count: 0,
         };
 
         terminal.draw(|f| app.draw(f)).unwrap();
@@ -347,5 +475,55 @@ mod tests {
             .collect();
 
         assert_eq!(line.trim_end(), HELP_TEXT);
+    }
+
+    #[test]
+    fn toggle_done_via_key_event() {
+        let mut state = ListState::default();
+        state.select(Some(0));
+        let mut app = App {
+            exit: false,
+            state,
+            items: vec![
+                Todo {
+                    title: String::from("pending task"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                },
+                Todo {
+                    title: String::from("done task"),
+                    comment: None,
+                    expanded: false,
+                    done: true,
+                },
+            ],
+            pending_count: 1,
+        };
+
+        // Toggle first item from pending to done
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        assert!(app.items[0].done);
+        assert_eq!(app.pending_count, 0);
+
+        // Toggle back to pending
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        assert!(!app.items[0].done);
+        assert_eq!(app.pending_count, 1);
+    }
+
+    #[test]
+    fn load_todos_handles_done_field() {
+        let todos = load_todos().expect("load TODOs");
+        assert_eq!(todos.len(), 4);
+
+        // First three items should default to not done
+        assert!(!todos[0].done);
+        assert!(!todos[1].done);
+        assert!(!todos[2].done);
+
+        // Fourth item should be marked as done
+        assert!(todos[3].done);
+        assert_eq!(todos[3].title, "Completed task example");
     }
 }
