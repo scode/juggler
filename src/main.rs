@@ -31,19 +31,28 @@ struct Todo {
 impl Todo {
     fn collapsed_summary(&self) -> String {
         let mut text = self.title.clone();
-        if self
-            .comment
-            .as_ref()
-            .map(|c| !c.trim().is_empty())
-            .unwrap_or(false)
-        {
-            text.push('>');
+        if self.has_comment() {
+            if self.expanded {
+                text.push_str(" 📖"); // Expanded indicator
+            } else {
+                text.push_str(" 📋"); // Expandable indicator
+            }
         }
         text
     }
 
+    fn has_comment(&self) -> bool {
+        self.comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+    }
+
     fn expanded_text(&self) -> String {
         let mut text = self.title.clone();
+        if self.has_comment() {
+            text.push_str(" 📖"); // Expanded indicator
+        }
         if let Some(comment) = &self.comment {
             text.push('\n');
             let indented = comment
@@ -143,11 +152,8 @@ impl App {
         } else {
             todo.collapsed_summary()
         };
-        let prefix = if Some(index) == self.state.selected() {
-            ">> "
-        } else {
-            "   "
-        };
+        let is_selected = Some(index) == self.state.selected();
+        let prefix = if is_selected { "▶ " } else { "  " };
 
         if let Some((first, rest)) = base.split_once('\n') {
             format!("{}{}\n{}", prefix, first, rest)
@@ -233,7 +239,7 @@ mod tests {
             comment: Some(String::from("comment")),
             expanded: false,
         };
-        assert_eq!(with_comment.collapsed_summary(), "a>");
+        assert_eq!(with_comment.collapsed_summary(), "a 📋");
 
         let without_comment = Todo {
             title: String::from("b"),
@@ -250,7 +256,7 @@ mod tests {
             comment: Some(String::from("line1\nline2")),
             expanded: true,
         };
-        assert_eq!(todo.expanded_text(), "a\n      line1\n      line2");
+        assert_eq!(todo.expanded_text(), "a 📖\n      line1\n      line2");
     }
 
     #[test]
@@ -274,8 +280,49 @@ mod tests {
             ],
         };
 
-        assert_eq!(app.display_text(0), ">> a");
-        assert_eq!(app.display_text(1), "   b\n      c1\n      c2");
+        assert_eq!(app.display_text(0), "▶ a");
+        assert_eq!(app.display_text(1), "  b 📖\n      c1\n      c2");
+    }
+
+    #[test]
+    fn visual_indicators_for_todo_states() {
+        // Test collapsed item with comment (shows 📋)
+        let collapsed_with_comment = Todo {
+            title: String::from("Task with details"),
+            comment: Some(String::from("Some details")),
+            expanded: false,
+        };
+        assert_eq!(
+            collapsed_with_comment.collapsed_summary(),
+            "Task with details 📋"
+        );
+
+        // Test expanded item with comment (shows 📖)
+        let expanded_with_comment = Todo {
+            title: String::from("Task with details"),
+            comment: Some(String::from("Some details")),
+            expanded: true,
+        };
+        assert_eq!(
+            expanded_with_comment.expanded_text(),
+            "Task with details 📖\n      Some details"
+        );
+
+        // Test item without comment (no icon)
+        let no_comment = Todo {
+            title: String::from("Simple task"),
+            comment: None,
+            expanded: false,
+        };
+        assert_eq!(no_comment.collapsed_summary(), "Simple task");
+
+        // Test item with empty comment (no icon)
+        let empty_comment = Todo {
+            title: String::from("Task with empty comment"),
+            comment: Some(String::from("   ")),
+            expanded: false,
+        };
+        assert_eq!(empty_comment.collapsed_summary(), "Task with empty comment");
     }
 
     #[test]
