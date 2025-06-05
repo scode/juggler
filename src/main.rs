@@ -8,13 +8,15 @@ use ratatui::{
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
-const HELP_TEXT: &str = "o - open, j - select next, k - select previous, e - toggle done, q - quit";
+const HELP_TEXT: &str =
+    "o - open, j - select next, k - select previous, x - toggle select, e - toggle done, q - quit";
 
 const KEY_QUIT: KeyCode = KeyCode::Char('q');
 const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
 const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
 const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
 const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
+const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
@@ -30,6 +32,7 @@ struct Todo {
     comment: Option<String>,
     expanded: bool,
     done: bool,
+    selected: bool,
 }
 
 impl Todo {
@@ -81,6 +84,7 @@ fn load_todos() -> io::Result<Vec<Todo>> {
             comment: c.comment,
             expanded: false,
             done: c.done,
+            selected: false,
         })
         .collect())
 }
@@ -177,7 +181,8 @@ impl App {
             .filter(|(_, item)| item.done)
             .map(|(original_idx, _)| {
                 let text = self.display_text(original_idx);
-                let styled_text = Text::styled(text, Style::default().add_modifier(Modifier::CROSSED_OUT));
+                let styled_text =
+                    Text::styled(text, Style::default().add_modifier(Modifier::CROSSED_OUT));
                 ratatui::widgets::ListItem::new(styled_text)
             })
             .collect();
@@ -237,12 +242,13 @@ impl App {
             todo.collapsed_summary()
         };
         let is_selected = Some(index) == self.state.selected();
-        let prefix = if is_selected { "▶ " } else { "  " };
+        let cursor_prefix = if is_selected { "▶ " } else { "  " };
+        let checkbox = if todo.selected { "[x] " } else { "[ ] " };
 
         if let Some((first, rest)) = base.split_once('\n') {
-            format!("{}{}\n{}", prefix, first, rest)
+            format!("{}{}{}\n{}", cursor_prefix, checkbox, first, rest)
         } else {
-            format!("{}{}", prefix, base)
+            format!("{}{}{}", cursor_prefix, checkbox, base)
         }
     }
 
@@ -264,6 +270,7 @@ impl App {
             KEY_PREVIOUS_ITEM => self.select_previous(),
             KEY_TOGGLE_EXPAND => self.toggle_selected(),
             KEY_TOGGLE_DONE => self.toggle_done(),
+            KEY_TOGGLE_SELECT => self.toggle_select(),
             _ => {}
         }
     }
@@ -308,6 +315,14 @@ impl App {
         }
     }
 
+    fn toggle_select(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.selected = !item.selected;
+            }
+        }
+    }
+
     fn exit(&mut self) {
         self.exit = true;
     }
@@ -341,6 +356,7 @@ mod tests {
                 comment: Some(String::from("comment")),
                 expanded: false,
                 done: false,
+                selected: false,
             }],
             pending_count: 1,
         };
@@ -358,6 +374,7 @@ mod tests {
             comment: Some(String::from("comment")),
             expanded: false,
             done: false,
+            selected: false,
         };
         assert_eq!(with_comment.collapsed_summary(), "a 📋");
 
@@ -366,6 +383,7 @@ mod tests {
             comment: None,
             expanded: false,
             done: false,
+            selected: false,
         };
         assert_eq!(without_comment.collapsed_summary(), "b");
     }
@@ -377,6 +395,7 @@ mod tests {
             comment: Some(String::from("line1\nline2")),
             expanded: true,
             done: false,
+            selected: false,
         };
         assert_eq!(todo.expanded_text(), "a 📖\n      line1\n      line2");
     }
@@ -394,19 +413,21 @@ mod tests {
                     comment: None,
                     expanded: false,
                     done: false,
+                    selected: false,
                 },
                 Todo {
                     title: String::from("b"),
                     comment: Some(String::from("c1\nc2")),
                     expanded: true,
                     done: false,
+                    selected: false,
                 },
             ],
             pending_count: 2,
         };
 
-        assert_eq!(app.display_text(0), "▶ a");
-        assert_eq!(app.display_text(1), "  b 📖\n      c1\n      c2");
+        assert_eq!(app.display_text(0), "▶ [ ] a");
+        assert_eq!(app.display_text(1), "  [ ] b 📖\n      c1\n      c2");
     }
 
     #[test]
@@ -417,6 +438,7 @@ mod tests {
             comment: Some(String::from("Some details")),
             expanded: false,
             done: false,
+            selected: false,
         };
         assert_eq!(
             collapsed_with_comment.collapsed_summary(),
@@ -429,6 +451,7 @@ mod tests {
             comment: Some(String::from("Some details")),
             expanded: true,
             done: false,
+            selected: false,
         };
         assert_eq!(
             expanded_with_comment.expanded_text(),
@@ -441,6 +464,7 @@ mod tests {
             comment: None,
             expanded: false,
             done: false,
+            selected: false,
         };
         assert_eq!(no_comment.collapsed_summary(), "Simple task");
 
@@ -450,6 +474,7 @@ mod tests {
             comment: Some(String::from("   ")),
             expanded: false,
             done: false,
+            selected: false,
         };
         assert_eq!(empty_comment.collapsed_summary(), "Task with empty comment");
     }
@@ -458,7 +483,7 @@ mod tests {
     fn draw_displays_help_text() {
         use ratatui::{Terminal, backend::TestBackend};
 
-        let backend = TestBackend::new(80, 10);
+        let backend = TestBackend::new(100, 10);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = App {
@@ -492,12 +517,14 @@ mod tests {
                     comment: None,
                     expanded: false,
                     done: false,
+                    selected: false,
                 },
                 Todo {
                     title: String::from("done task"),
                     comment: None,
                     expanded: false,
                     done: true,
+                    selected: false,
                 },
             ],
             pending_count: 1,
