@@ -3,7 +3,7 @@ use std::{fs, io};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::Text,
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
@@ -176,7 +176,9 @@ impl App {
             .enumerate()
             .filter(|(_, item)| item.done)
             .map(|(original_idx, _)| {
-                ratatui::widgets::ListItem::new(Text::from(self.display_text(original_idx)))
+                let text = self.display_text(original_idx);
+                let styled_text = Text::styled(text, Style::default().add_modifier(Modifier::CROSSED_OUT));
+                ratatui::widgets::ListItem::new(styled_text)
             })
             .collect();
 
