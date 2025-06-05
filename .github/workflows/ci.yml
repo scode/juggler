@@ -35,8 +35,6 @@ jobs:
   clippy:
     name: clippy
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,10 +42,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Run clippy action
-        uses: clechasseur/rs-clippy-check@v3
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
   doc:
     # run docs generation on nightly rather than stable. This enables features like
     # https://doc.rust-lang.org/beta/unstable-book/language-features/doc-cfg.html which allows an
