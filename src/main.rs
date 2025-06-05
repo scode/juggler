@@ -73,7 +73,8 @@ fn load_todos() -> io::Result<Vec<Todo>> {
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
-    let app_result = App::default().run(&mut terminal);
+    let mut app = App::new()?;
+    let app_result = app.run(&mut terminal);
     ratatui::restore();
     app_result
 }
@@ -85,16 +86,26 @@ pub struct App {
     items: Vec<Todo>,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn new() -> io::Result<Self> {
         let mut state = ListState::default();
-        state.select(Some(0));
-        let items = load_todos().unwrap_or_default();
-        App {
+        let items = load_todos()?;
+
+        if !items.is_empty() {
+            state.select(Some(0));
+        }
+
+        Ok(App {
             exit: false,
             state,
             items,
-        }
+        })
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        panic!("Use App::new() instead of App::default() to handle errors properly");
     }
 }
 
