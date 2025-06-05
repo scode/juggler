@@ -151,7 +151,7 @@ impl App {
         // Split main area between pending and done sections
         let sections = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Min(1)])
+            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
             .split(main_area);
 
         // Render pending section
