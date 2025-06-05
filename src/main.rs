@@ -40,9 +40,9 @@ impl Todo {
         let mut text = self.title.clone();
         if self.has_comment() {
             if self.expanded {
-                text.push_str(" 📖"); // Expanded indicator
+                text.push_str(" >>>"); // Expanded indicator
             } else {
-                text.push_str(" 📋"); // Expandable indicator
+                text.push_str(" >"); // Expandable indicator
             }
         }
         text
@@ -58,7 +58,7 @@ impl Todo {
     fn expanded_text(&self) -> String {
         let mut text = self.title.clone();
         if self.has_comment() {
-            text.push_str(" 📖"); // Expanded indicator
+            text.push_str(" >>>"); // Expanded indicator
         }
         if let Some(comment) = &self.comment {
             text.push('\n');
@@ -376,7 +376,7 @@ mod tests {
             done: false,
             selected: false,
         };
-        assert_eq!(with_comment.collapsed_summary(), "a 📋");
+        assert_eq!(with_comment.collapsed_summary(), "a >");
 
         let without_comment = Todo {
             title: String::from("b"),
@@ -397,7 +397,7 @@ mod tests {
             done: false,
             selected: false,
         };
-        assert_eq!(todo.expanded_text(), "a 📖\n      line1\n      line2");
+        assert_eq!(todo.expanded_text(), "a >>>\n      line1\n      line2");
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
         };
 
         assert_eq!(app.display_text(0), "▶ [ ] a");
-        assert_eq!(app.display_text(1), "  [ ] b 📖\n      c1\n      c2");
+        assert_eq!(app.display_text(1), "  [ ] b >>>\n      c1\n      c2");
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
         };
         assert_eq!(
             collapsed_with_comment.collapsed_summary(),
-            "Task with details 📋"
+            "Task with details >"
         );
 
         // Test expanded item with comment (shows 📖)
@@ -455,7 +455,7 @@ mod tests {
         };
         assert_eq!(
             expanded_with_comment.expanded_text(),
-            "Task with details 📖\n      Some details"
+            "Task with details >>>\n      Some details"
         );
 
         // Test item without comment (no icon)
