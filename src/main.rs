@@ -306,13 +306,30 @@ impl App {
     }
 
     fn toggle_done(&mut self) {
-        if let Some(i) = self.state.selected() {
-            if let Some(item) = self.items.get_mut(i) {
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            // If there are selected items, toggle their done status
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    item.done = !item.done;
+                    item.selected = false; // Deselect after toggling
+                }
+            }
+        } else if let Some(cursor_idx) = self.state.selected() {
+            // If no items are selected, toggle the item under cursor
+            if let Some(item) = self.items.get_mut(cursor_idx) {
                 item.done = !item.done;
-                // Update pending count
-                self.pending_count = self.items.iter().filter(|item| !item.done).count();
             }
         }
+
+        // Update pending count
+        self.pending_count = self.items.iter().filter(|item| !item.done).count();
     }
 
     fn toggle_select(&mut self) {
@@ -554,5 +571,86 @@ mod tests {
         // Fourth item should be marked as done
         assert!(todos[3].done);
         assert_eq!(todos[3].title, "Completed task example");
+    }
+
+    #[test]
+    fn toggle_done_works_on_selected_items() {
+        let mut state = ListState::default();
+        state.select(Some(1)); // Cursor on second item
+        let mut app = App {
+            exit: false,
+            state,
+            items: vec![
+                Todo {
+                    title: String::from("task 1"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: true, // Selected
+                },
+                Todo {
+                    title: String::from("task 2"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: false, // Not selected (cursor is here)
+                },
+                Todo {
+                    title: String::from("task 3"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: true, // Selected
+                },
+            ],
+            pending_count: 3,
+        };
+
+        // Toggle done - should affect only selected items (0 and 2), not cursor item (1)
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+
+        assert!(app.items[0].done); // Selected item should be marked done
+        assert!(!app.items[1].done); // Cursor item should remain unchanged
+        assert!(app.items[2].done); // Selected item should be marked done
+        assert_eq!(app.pending_count, 1); // Only one pending item left
+
+        // Items should be deselected after toggling
+        assert!(!app.items[0].selected);
+        assert!(!app.items[1].selected);
+        assert!(!app.items[2].selected);
+    }
+
+    #[test]
+    fn toggle_done_works_on_cursor_when_no_selection() {
+        let mut state = ListState::default();
+        state.select(Some(1)); // Cursor on second item
+        let mut app = App {
+            exit: false,
+            state,
+            items: vec![
+                Todo {
+                    title: String::from("task 1"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: false, // Not selected
+                },
+                Todo {
+                    title: String::from("task 2"),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: false, // Not selected (cursor is here)
+                },
+            ],
+            pending_count: 2,
+        };
+
+        // Toggle done - should affect cursor item since no items are selected
+        app.handle_key_event(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+
+        assert!(!app.items[0].done); // First item should remain unchanged
+        assert!(app.items[1].done); // Cursor item should be marked done
+        assert_eq!(app.pending_count, 1); // One pending item left
     }
 }
