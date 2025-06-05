@@ -5,3 +5,6 @@
 - title: Item 2
   comment: Another comment for item 2.
 - title: Item 3
+- title: Completed task example
+  comment: This task was already finished when the app started.
+  done: true
