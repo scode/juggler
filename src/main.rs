@@ -319,12 +319,20 @@ impl App {
                 if let Some(item) = self.items.get_mut(i) {
                     item.done = !item.done;
                     item.selected = false; // Deselect after toggling
+                    // Collapse item when marked as done
+                    if item.done {
+                        item.expanded = false;
+                    }
                 }
             }
         } else if let Some(cursor_idx) = self.state.selected() {
             // If no items are selected, toggle the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 item.done = !item.done;
+                // Collapse item when marked as done
+                if item.done {
+                    item.expanded = false;
+                }
             }
         }
 
