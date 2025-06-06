@@ -2,6 +2,9 @@ use std::{fs, io};
 
 use chrono::{DateTime, Duration, Utc};
 
+mod store;
+use store::TodoItem;
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -21,15 +24,6 @@ const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
 const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
 const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
-
-#[derive(Debug, serde::Deserialize)]
-struct TodoItem {
-    title: String,
-    comment: Option<String>,
-    #[serde(default)]
-    done: bool,
-    due_date: Option<DateTime<Utc>>,
-}
 
 #[derive(Debug, Clone)]
 struct Todo {
