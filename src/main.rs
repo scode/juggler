@@ -23,7 +23,7 @@ const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
 const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
 
 #[derive(Debug, serde::Deserialize)]
-struct TodoConfig {
+struct TodoItem {
     title: String,
     comment: Option<String>,
     #[serde(default)]
@@ -164,17 +164,17 @@ enum DueDateUrgency {
 
 fn load_todos() -> io::Result<Vec<Todo>> {
     let content = fs::read_to_string("TODOs.yaml")?;
-    let configs: Vec<TodoConfig> = serde_yaml::from_str(&content)
+    let items: Vec<TodoItem> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let mut todos: Vec<Todo> = configs
+    let mut todos: Vec<Todo> = items
         .into_iter()
-        .map(|c| Todo {
-            title: c.title,
-            comment: c.comment,
+        .map(|item| Todo {
+            title: item.title,
+            comment: item.comment,
             expanded: false,
-            done: c.done,
+            done: item.done,
             selected: false,
-            due_date: c.due_date,
+            due_date: item.due_date,
         })
         .collect();
 
