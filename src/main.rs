@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 const HELP_TEXT: &str =
-    "o - open, j - select next, k - select previous, x - toggle select, e - toggle done, q - quit";
+    "o - open, j/k - nav, x - select, e - done, s - snooze 1d, S - snooze 7d, q - quit";
 
 const KEY_QUIT: KeyCode = KeyCode::Char('q');
 const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -19,6 +19,8 @@ const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
 const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
 const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
 const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
+const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
+const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
 
 #[derive(Debug, serde::Deserialize)]
 struct TodoConfig {
@@ -263,8 +265,8 @@ impl App {
             })
             .collect();
 
-        let pending_widget = List::new(pending_items)
-            .block(Block::default().title("Pending").borders(Borders::ALL));
+        let pending_widget =
+            List::new(pending_items).block(Block::default().title("Pending").borders(Borders::ALL));
 
         // Render done section
         let done_items: Vec<_> = self
@@ -284,8 +286,8 @@ impl App {
             })
             .collect();
 
-        let done_widget = List::new(done_items)
-            .block(Block::default().title("Done").borders(Borders::ALL));
+        let done_widget =
+            List::new(done_items).block(Block::default().title("Done").borders(Borders::ALL));
 
         // Determine which section to highlight based on selection
         if let Some(selected_idx) = self.state.selected() {
@@ -375,6 +377,8 @@ impl App {
             KEY_TOGGLE_EXPAND => self.toggle_selected(),
             KEY_TOGGLE_DONE => self.toggle_done(),
             KEY_TOGGLE_SELECT => self.toggle_select(),
+            KEY_SNOOZE_DAY => self.snooze_day(),
+            KEY_SNOOZE_WEEK => self.snooze_week(),
             _ => {}
         }
     }
@@ -450,6 +454,42 @@ impl App {
                 item.selected = !item.selected;
             }
         }
+    }
+
+    fn snooze(&mut self, duration: Duration) {
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            // If there are selected items, snooze them
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    let now = Utc::now();
+                    let new_due_date = now + duration;
+                    item.due_date = Some(new_due_date);
+                    item.selected = false; // Deselect after snoozing
+                }
+            }
+        } else if let Some(cursor_idx) = self.state.selected() {
+            // If no items are selected, snooze the item under cursor
+            if let Some(item) = self.items.get_mut(cursor_idx) {
+                let now = Utc::now();
+                let new_due_date = now + duration;
+                item.due_date = Some(new_due_date);
+            }
+        }
+    }
+
+    fn snooze_day(&mut self) {
+        self.snooze(Duration::days(1));
+    }
+
+    fn snooze_week(&mut self) {
+        self.snooze(Duration::days(7));
     }
 
     fn exit(&mut self) {
@@ -815,5 +855,37 @@ mod tests {
         assert!(!app.items[0].done); // First item should remain unchanged
         assert!(app.items[1].done); // Cursor item should be marked done
         assert_eq!(app.pending_count, 1); // One pending item left
+    }
+
+    #[test]
+    fn snooze_functionality() {
+        let mut state = ListState::default();
+        state.select(Some(0));
+        let mut app = App {
+            exit: false,
+            state,
+            items: vec![Todo {
+                title: String::from("task 1"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+            }],
+            pending_count: 1,
+        };
+
+        // Test snooze day
+        app.handle_key_event(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
+
+        // Test snooze week
+        app.handle_key_event(KeyEvent::new(KEY_SNOOZE_WEEK, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
+
+        // The due date should be in the future
+        let due_date = app.items[0].due_date.unwrap();
+        let now = Utc::now();
+        assert!(due_date > now);
     }
 }
