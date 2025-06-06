@@ -121,7 +121,7 @@ fn load_todos() -> io::Result<Vec<Todo>> {
     let content = fs::read_to_string("TODOs.yaml")?;
     let configs: Vec<TodoConfig> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(configs
+    let mut todos: Vec<Todo> = configs
         .into_iter()
         .map(|c| Todo {
             title: c.title,
@@ -131,7 +131,13 @@ fn load_todos() -> io::Result<Vec<Todo>> {
             selected: false,
             due_date: c.due_date,
         })
-        .collect())
+        .collect();
+
+    // Sort by due date in ascending order
+    // Items without due dates go to the end
+    todos.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
+
+    Ok(todos)
 }
 
 fn main() -> io::Result<()> {
@@ -407,11 +413,12 @@ mod tests {
     fn load_todos_parses_comments() {
         let todos = load_todos().expect("load TODOs");
         assert_eq!(todos.len(), 6);
-        assert_eq!(todos[0].title, "Item 1");
-        let comment = todos[0].comment.as_deref().expect("comment for first item");
+        // After sorting, Item 1 is now at index 3 (2031 due date)
+        assert_eq!(todos[3].title, "Item 1");
+        let comment = todos[3].comment.as_deref().expect("comment for Item 1");
         assert!(comment.starts_with("This is a comment for item 1."));
         assert!(comment.contains("It can span multiple lines."));
-        assert!(!todos[0].expanded);
+        assert!(!todos[3].expanded);
     }
 
     #[test]
