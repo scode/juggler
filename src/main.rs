@@ -264,8 +264,7 @@ impl App {
             .collect();
 
         let pending_widget = List::new(pending_items)
-            .block(Block::default().title("Pending").borders(Borders::ALL))
-            .highlight_style(Style::default().fg(Color::Yellow));
+            .block(Block::default().title("Pending").borders(Borders::ALL));
 
         // Render done section
         let done_items: Vec<_> = self
@@ -286,8 +285,7 @@ impl App {
             .collect();
 
         let done_widget = List::new(done_items)
-            .block(Block::default().title("Done").borders(Borders::ALL))
-            .highlight_style(Style::default().fg(Color::Green));
+            .block(Block::default().title("Done").borders(Borders::ALL));
 
         // Determine which section to highlight based on selection
         if let Some(selected_idx) = self.state.selected() {
