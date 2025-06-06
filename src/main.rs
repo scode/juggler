@@ -64,7 +64,7 @@ impl Todo {
             text.push('\n');
             let indented = comment
                 .lines()
-                .map(|line| format!("      {}", line))
+                .map(|line| format!("         {}", line))
                 .collect::<Vec<_>>()
                 .join("\n");
             text.push_str(&indented);
@@ -414,7 +414,7 @@ mod tests {
             done: false,
             selected: false,
         };
-        assert_eq!(todo.expanded_text(), "a >>>\n      line1\n      line2");
+        assert_eq!(todo.expanded_text(), "a >>>\n         line1\n         line2");
     }
 
     #[test]
@@ -444,7 +444,7 @@ mod tests {
         };
 
         assert_eq!(app.display_text(0), "▶ [ ] a");
-        assert_eq!(app.display_text(1), "  [ ] b >>>\n      c1\n      c2");
+        assert_eq!(app.display_text(1), "  [ ] b >>>\n         c1\n         c2");
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod tests {
         };
         assert_eq!(
             expanded_with_comment.expanded_text(),
-            "Task with details >>>\n      Some details"
+            "Task with details >>>\n         Some details"
         );
 
         // Test item without comment (no icon)
