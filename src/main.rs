@@ -6,7 +6,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Modifier, Style},
-    text::Text,
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
@@ -40,23 +40,31 @@ struct Todo {
 }
 
 impl Todo {
-    fn collapsed_summary(&self) -> String {
-        let mut text = String::new();
+    fn collapsed_summary(&self) -> Vec<Span> {
+        let mut spans = Vec::new();
 
         // Add relative time if due date exists
         if let Some(relative_time) = self.format_relative_time() {
-            text.push_str(&format!("{} ", relative_time));
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{} ", relative_time),
+                Style::default().fg(color),
+            ));
         }
 
-        text.push_str(&self.title);
+        spans.push(Span::raw(&self.title));
         if self.has_comment() {
             if self.expanded {
-                text.push_str(" >>>"); // Expanded indicator
+                spans.push(Span::raw(" >>>"));
             } else {
-                text.push_str(" >"); // Expandable indicator
+                spans.push(Span::raw(" >"));
             }
         }
-        text
+        spans
     }
 
     fn has_comment(&self) -> bool {
@@ -66,28 +74,36 @@ impl Todo {
             .unwrap_or(false)
     }
 
-    fn expanded_text(&self) -> String {
-        let mut text = String::new();
+    fn expanded_text(&self) -> Text {
+        let mut spans = Vec::new();
 
         // Add relative time if due date exists
         if let Some(relative_time) = self.format_relative_time() {
-            text.push_str(&format!("{} ", relative_time));
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{} ", relative_time),
+                Style::default().fg(color),
+            ));
         }
 
-        text.push_str(&self.title);
+        spans.push(Span::raw(&self.title));
         if self.has_comment() {
-            text.push_str(" >>>"); // Expanded indicator
+            spans.push(Span::raw(" >>>"));
         }
+
         if let Some(comment) = &self.comment {
-            text.push('\n');
-            let indented = comment
-                .lines()
-                .map(|line| format!("         {}", line))
-                .collect::<Vec<_>>()
-                .join("\n");
-            text.push_str(&indented);
+            let mut lines = vec![Line::from(spans)];
+            for line in comment.lines() {
+                lines.push(Line::from(vec![Span::raw(format!("         {}", line))]));
+            }
+            Text::from(lines)
+        } else {
+            Text::from(Line::from(spans))
         }
-        text
     }
 
     fn format_relative_time(&self) -> Option<String> {
@@ -108,13 +124,40 @@ impl Todo {
                 (abs_seconds / 86400, "d")
             };
 
-            if total_seconds < 0 {
+            let time_str = if total_seconds < 0 {
                 format!("-{}{}", value, unit)
             } else {
                 format!("{}{}", value, unit)
+            };
+
+            // Right-pad to 4 characters for alignment
+            format!("{:>4}", time_str)
+        })
+    }
+
+    fn due_date_urgency(&self) -> Option<DueDateUrgency> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+            let total_seconds = duration.num_seconds();
+
+            if total_seconds < 0 {
+                DueDateUrgency::Overdue
+            } else if total_seconds <= 86400 {
+                // 24 hours
+                DueDateUrgency::DueSoon
+            } else {
+                DueDateUrgency::Normal
             }
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum DueDateUrgency {
+    Overdue,
+    DueSoon,
+    Normal,
 }
 
 fn load_todos() -> io::Result<Vec<Todo>> {
@@ -216,7 +259,7 @@ impl App {
             .enumerate()
             .filter(|(_, item)| !item.done)
             .map(|(original_idx, _)| {
-                ratatui::widgets::ListItem::new(Text::from(self.display_text(original_idx)))
+                ratatui::widgets::ListItem::new(self.display_text(original_idx))
             })
             .collect();
 
@@ -231,10 +274,14 @@ impl App {
             .enumerate()
             .filter(|(_, item)| item.done)
             .map(|(original_idx, _)| {
-                let text = self.display_text(original_idx);
-                let styled_text =
-                    Text::styled(text, Style::default().add_modifier(Modifier::CROSSED_OUT));
-                ratatui::widgets::ListItem::new(styled_text)
+                let mut text = self.display_text(original_idx);
+                // Apply crossed-out style to all spans
+                for line in &mut text.lines {
+                    for span in &mut line.spans {
+                        span.style = span.style.add_modifier(Modifier::CROSSED_OUT);
+                    }
+                }
+                ratatui::widgets::ListItem::new(text)
             })
             .collect();
 
@@ -285,21 +332,29 @@ impl App {
         frame.render_widget(help_widget, help_area);
     }
 
-    fn display_text(&self, index: usize) -> String {
+    fn display_text(&self, index: usize) -> Text {
         let todo = &self.items[index];
-        let base = if todo.expanded {
-            todo.expanded_text()
-        } else {
-            todo.collapsed_summary()
-        };
         let is_selected = Some(index) == self.state.selected();
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
         let checkbox = if todo.selected { "[x] " } else { "[ ] " };
 
-        if let Some((first, rest)) = base.split_once('\n') {
-            format!("{}{}{}\n{}", cursor_prefix, checkbox, first, rest)
+        if todo.expanded {
+            let mut text = todo.expanded_text();
+            // Prepend cursor and checkbox to the first line
+            if let Some(first_line) = text.lines.get_mut(0) {
+                first_line.spans.insert(0, Span::raw(checkbox));
+                first_line.spans.insert(0, Span::raw(cursor_prefix));
+            } else {
+                text.lines.insert(
+                    0,
+                    Line::from(vec![Span::raw(cursor_prefix), Span::raw(checkbox)]),
+                );
+            }
+            text
         } else {
-            format!("{}{}{}", cursor_prefix, checkbox, base)
+            let mut spans = vec![Span::raw(cursor_prefix), Span::raw(checkbox)];
+            spans.extend(todo.collapsed_summary());
+            Text::from(Line::from(spans))
         }
     }
 
@@ -409,6 +464,23 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyModifiers};
 
+    // Helper function to convert spans to plain text for testing
+    fn spans_to_string(spans: &[Span]) -> String {
+        spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>()
+    }
+
+    // Helper function to convert Text to plain text for testing
+    fn text_to_string(text: &Text) -> String {
+        text.lines
+            .iter()
+            .map(|line| spans_to_string(&line.spans))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn load_todos_parses_comments() {
         let todos = load_todos().expect("load TODOs");
@@ -455,7 +527,7 @@ mod tests {
             selected: false,
             due_date: None,
         };
-        assert_eq!(with_comment.collapsed_summary(), "a >");
+        assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a >");
 
         let without_comment = Todo {
             title: String::from("b"),
@@ -465,7 +537,7 @@ mod tests {
             selected: false,
             due_date: None,
         };
-        assert_eq!(without_comment.collapsed_summary(), "b");
+        assert_eq!(spans_to_string(&without_comment.collapsed_summary()), "b");
     }
 
     #[test]
@@ -479,7 +551,7 @@ mod tests {
             due_date: None,
         };
         assert_eq!(
-            todo.expanded_text(),
+            text_to_string(&todo.expanded_text()),
             "a >>>\n         line1\n         line2"
         );
     }
@@ -512,8 +584,11 @@ mod tests {
             pending_count: 2,
         };
 
-        assert_eq!(app.display_text(0), "▶ [ ] a");
-        assert_eq!(app.display_text(1), "  [ ] b >>>\n         c1\n         c2");
+        assert_eq!(text_to_string(&app.display_text(0)), "▶ [ ] a");
+        assert_eq!(
+            text_to_string(&app.display_text(1)),
+            "  [ ] b >>>\n         c1\n         c2"
+        );
     }
 
     #[test]
@@ -528,7 +603,7 @@ mod tests {
             due_date: None,
         };
         assert_eq!(
-            collapsed_with_comment.collapsed_summary(),
+            spans_to_string(&collapsed_with_comment.collapsed_summary()),
             "Task with details >"
         );
 
@@ -542,7 +617,7 @@ mod tests {
             due_date: None,
         };
         assert_eq!(
-            expanded_with_comment.expanded_text(),
+            text_to_string(&expanded_with_comment.expanded_text()),
             "Task with details >>>\n         Some details"
         );
 
@@ -555,7 +630,10 @@ mod tests {
             selected: false,
             due_date: None,
         };
-        assert_eq!(no_comment.collapsed_summary(), "Simple task");
+        assert_eq!(
+            spans_to_string(&no_comment.collapsed_summary()),
+            "Simple task"
+        );
 
         // Test item with empty comment (no icon)
         let empty_comment = Todo {
@@ -566,7 +644,10 @@ mod tests {
             selected: false,
             due_date: None,
         };
-        assert_eq!(empty_comment.collapsed_summary(), "Task with empty comment");
+        assert_eq!(
+            spans_to_string(&empty_comment.collapsed_summary()),
+            "Task with empty comment"
+        );
     }
 
     #[test]
