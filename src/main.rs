@@ -1,5 +1,7 @@
 use std::{fs, io};
 
+use chrono::{DateTime, Utc};
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -24,6 +26,7 @@ struct TodoConfig {
     comment: Option<String>,
     #[serde(default)]
     done: bool,
+    due_date: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,11 +36,19 @@ struct Todo {
     expanded: bool,
     done: bool,
     selected: bool,
+    due_date: Option<DateTime<Utc>>,
 }
 
 impl Todo {
     fn collapsed_summary(&self) -> String {
-        let mut text = self.title.clone();
+        let mut text = String::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            text.push_str(&format!("{} ", relative_time));
+        }
+
+        text.push_str(&self.title);
         if self.has_comment() {
             if self.expanded {
                 text.push_str(" >>>"); // Expanded indicator
@@ -56,7 +67,14 @@ impl Todo {
     }
 
     fn expanded_text(&self) -> String {
-        let mut text = self.title.clone();
+        let mut text = String::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            text.push_str(&format!("{} ", relative_time));
+        }
+
+        text.push_str(&self.title);
         if self.has_comment() {
             text.push_str(" >>>"); // Expanded indicator
         }
@@ -70,6 +88,32 @@ impl Todo {
             text.push_str(&indented);
         }
         text
+    }
+
+    fn format_relative_time(&self) -> Option<String> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+
+            let total_seconds = duration.num_seconds();
+            let abs_seconds = total_seconds.abs();
+
+            let (value, unit) = if abs_seconds < 60 {
+                (abs_seconds, "s")
+            } else if abs_seconds < 3600 {
+                (abs_seconds / 60, "m")
+            } else if abs_seconds < 86400 {
+                (abs_seconds / 3600, "h")
+            } else {
+                (abs_seconds / 86400, "d")
+            };
+
+            if total_seconds < 0 {
+                format!("-{}{}", value, unit)
+            } else {
+                format!("{}{}", value, unit)
+            }
+        })
     }
 }
 
@@ -85,6 +129,7 @@ fn load_todos() -> io::Result<Vec<Todo>> {
             expanded: false,
             done: c.done,
             selected: false,
+            due_date: c.due_date,
         })
         .collect())
 }
@@ -361,7 +406,7 @@ mod tests {
     #[test]
     fn load_todos_parses_comments() {
         let todos = load_todos().expect("load TODOs");
-        assert_eq!(todos.len(), 4);
+        assert_eq!(todos.len(), 6);
         assert_eq!(todos[0].title, "Item 1");
         let comment = todos[0].comment.as_deref().expect("comment for first item");
         assert!(comment.starts_with("This is a comment for item 1."));
@@ -382,6 +427,7 @@ mod tests {
                 expanded: false,
                 done: false,
                 selected: false,
+                due_date: None,
             }],
             pending_count: 1,
         };
@@ -400,6 +446,7 @@ mod tests {
             expanded: false,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(with_comment.collapsed_summary(), "a >");
 
@@ -409,6 +456,7 @@ mod tests {
             expanded: false,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(without_comment.collapsed_summary(), "b");
     }
@@ -421,8 +469,12 @@ mod tests {
             expanded: true,
             done: false,
             selected: false,
+            due_date: None,
         };
-        assert_eq!(todo.expanded_text(), "a >>>\n         line1\n         line2");
+        assert_eq!(
+            todo.expanded_text(),
+            "a >>>\n         line1\n         line2"
+        );
     }
 
     #[test]
@@ -439,6 +491,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: false,
+                    due_date: None,
                 },
                 Todo {
                     title: String::from("b"),
@@ -446,6 +499,7 @@ mod tests {
                     expanded: true,
                     done: false,
                     selected: false,
+                    due_date: None,
                 },
             ],
             pending_count: 2,
@@ -464,6 +518,7 @@ mod tests {
             expanded: false,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(
             collapsed_with_comment.collapsed_summary(),
@@ -477,6 +532,7 @@ mod tests {
             expanded: true,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(
             expanded_with_comment.expanded_text(),
@@ -490,6 +546,7 @@ mod tests {
             expanded: false,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(no_comment.collapsed_summary(), "Simple task");
 
@@ -500,6 +557,7 @@ mod tests {
             expanded: false,
             done: false,
             selected: false,
+            due_date: None,
         };
         assert_eq!(empty_comment.collapsed_summary(), "Task with empty comment");
     }
@@ -543,6 +601,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: false,
+                    due_date: None,
                 },
                 Todo {
                     title: String::from("done task"),
@@ -550,6 +609,7 @@ mod tests {
                     expanded: false,
                     done: true,
                     selected: false,
+                    due_date: None,
                 },
             ],
             pending_count: 1,
@@ -569,16 +629,20 @@ mod tests {
     #[test]
     fn load_todos_handles_done_field() {
         let todos = load_todos().expect("load TODOs");
-        assert_eq!(todos.len(), 4);
+        assert_eq!(todos.len(), 6);
 
-        // First three items should default to not done
+        // First four items should default to not done
         assert!(!todos[0].done);
         assert!(!todos[1].done);
         assert!(!todos[2].done);
+        assert!(!todos[3].done);
 
-        // Fourth item should be marked as done
-        assert!(todos[3].done);
-        assert_eq!(todos[3].title, "Completed task example");
+        // Fifth item should be marked as done
+        assert!(todos[4].done);
+        assert_eq!(todos[4].title, "Completed task example");
+
+        // Sixth item should default to not done
+        assert!(!todos[5].done);
     }
 
     #[test]
@@ -595,6 +659,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: true, // Selected
+                    due_date: None,
                 },
                 Todo {
                     title: String::from("task 2"),
@@ -602,6 +667,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: false, // Not selected (cursor is here)
+                    due_date: None,
                 },
                 Todo {
                     title: String::from("task 3"),
@@ -609,6 +675,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: true, // Selected
+                    due_date: None,
                 },
             ],
             pending_count: 3,
@@ -642,6 +709,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: false, // Not selected
+                    due_date: None,
                 },
                 Todo {
                     title: String::from("task 2"),
@@ -649,6 +717,7 @@ mod tests {
                     expanded: false,
                     done: false,
                     selected: false, // Not selected (cursor is here)
+                    due_date: None,
                 },
             ],
             pending_count: 2,

@@ -2,9 +2,17 @@
   comment: |
     This is a comment for item 1.
     It can span multiple lines.
+  due_date: "2031-01-06T10:30:00Z"
 - title: Item 2
   comment: Another comment for item 2.
+  due_date: "2028-01-05T15:45:00Z"
 - title: Item 3
+  due_date: "2025-01-07T09:00:00Z"
+- title: Overdue task
+  comment: This task is past its due date.
+  due_date: "2029-01-04T12:00:00Z"
 - title: Completed task example
   comment: This task was already finished when the app started.
   done: true
+- title: No due date task
+  comment: This task has no due date set.
