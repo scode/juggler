@@ -1,0 +1,792 @@
+use std::io;
+
+use chrono::{DateTime, Duration, Utc};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    DefaultTerminal, Frame,
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, List, ListState, Paragraph},
+};
+
+use crate::store::TodoItem;
+
+pub const HELP_TEXT: &str =
+    "o - open, j/k - nav, x - select, e - done, s - snooze 1d, S - snooze 7d, q - quit";
+
+pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
+pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
+pub const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
+pub const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
+pub const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
+pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
+pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
+pub const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
+
+#[derive(Debug, Clone)]
+pub struct Todo {
+    pub title: String,
+    pub comment: Option<String>,
+    pub expanded: bool,
+    pub done: bool,
+    pub selected: bool,
+    pub due_date: Option<DateTime<Utc>>,
+}
+
+impl Todo {
+    pub fn collapsed_summary(&self) -> Vec<Span> {
+        let mut spans = Vec::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{} ", relative_time),
+                Style::default().fg(color),
+            ));
+        }
+
+        spans.push(Span::raw(&self.title));
+        if self.has_comment() {
+            if self.expanded {
+                spans.push(Span::raw(" >>>"));
+            } else {
+                spans.push(Span::raw(" >"));
+            }
+        }
+        spans
+    }
+
+    pub fn has_comment(&self) -> bool {
+        self.comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    pub fn expanded_text(&self) -> Text {
+        let mut spans = Vec::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{} ", relative_time),
+                Style::default().fg(color),
+            ));
+        }
+
+        spans.push(Span::raw(&self.title));
+        if self.has_comment() {
+            spans.push(Span::raw(" >>>"));
+        }
+
+        if let Some(comment) = &self.comment {
+            let mut lines = vec![Line::from(spans)];
+            for line in comment.lines() {
+                lines.push(Line::from(vec![Span::raw(format!("         {}", line))]));
+            }
+            Text::from(lines)
+        } else {
+            Text::from(Line::from(spans))
+        }
+    }
+
+    pub fn format_relative_time(&self) -> Option<String> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+
+            let total_seconds = duration.num_seconds();
+            let abs_seconds = total_seconds.abs();
+
+            let (value, unit) = if abs_seconds < 60 {
+                (abs_seconds, "s")
+            } else if abs_seconds < 3600 {
+                (abs_seconds / 60, "m")
+            } else if abs_seconds < 86400 {
+                (abs_seconds / 3600, "h")
+            } else {
+                (abs_seconds / 86400, "d")
+            };
+
+            let time_str = if total_seconds < 0 {
+                format!("-{}{}", value, unit)
+            } else {
+                format!("{}{}", value, unit)
+            };
+
+            // Right-pad to 4 characters for alignment
+            format!("{:>4}", time_str)
+        })
+    }
+
+    pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+            let total_seconds = duration.num_seconds();
+
+            if total_seconds < 0 {
+                DueDateUrgency::Overdue
+            } else if total_seconds <= 86400 {
+                // 24 hours
+                DueDateUrgency::DueSoon
+            } else {
+                DueDateUrgency::Normal
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DueDateUrgency {
+    Overdue,
+    DueSoon,
+    Normal,
+}
+
+#[derive(Debug)]
+pub struct App {
+    exit: bool,
+    state: ListState,
+    items: Vec<Todo>,
+    pending_count: usize,
+}
+
+impl App {
+    pub fn new(items: Vec<Todo>) -> Self {
+        let mut state = ListState::default();
+
+        if !items.is_empty() {
+            state.select(Some(0));
+        }
+
+        let pending_count = items.iter().filter(|item| !item.done).count();
+
+        App {
+            exit: false,
+            state,
+            items,
+            pending_count,
+        }
+    }
+
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.draw_internal(frame))?;
+            self.handle_events()?;
+        }
+        Ok(())
+    }
+
+    fn draw_internal(&mut self, frame: &mut Frame) {
+        use ratatui::layout::{Constraint, Direction, Layout};
+
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(area);
+
+        let main_area = chunks[0];
+        let help_area = chunks[1];
+
+        // Split main area between pending and done sections
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
+            .split(main_area);
+
+        // Render pending section
+        let pending_items: Vec<_> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| !item.done)
+            .map(|(original_idx, _)| {
+                ratatui::widgets::ListItem::new(self.display_text_internal(original_idx))
+            })
+            .collect();
+
+        let pending_widget =
+            List::new(pending_items).block(Block::default().title("Pending").borders(Borders::ALL));
+
+        // Render done section
+        let done_items: Vec<_> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.done)
+            .map(|(original_idx, _)| {
+                let mut text = self.display_text_internal(original_idx);
+                // Apply crossed-out style to all spans
+                for line in &mut text.lines {
+                    for span in &mut line.spans {
+                        span.style = span.style.add_modifier(Modifier::CROSSED_OUT);
+                    }
+                }
+                ratatui::widgets::ListItem::new(text)
+            })
+            .collect();
+
+        let done_widget =
+            List::new(done_items).block(Block::default().title("Done").borders(Borders::ALL));
+
+        // Determine which section to highlight based on selection
+        if let Some(selected_idx) = self.state.selected() {
+            if let Some(selected_item) = self.items.get(selected_idx) {
+                if selected_item.done {
+                    // Highlight done section
+                    frame.render_widget(pending_widget, sections[0]);
+                    let mut done_state = ListState::default();
+                    let done_count = self.items[..=selected_idx]
+                        .iter()
+                        .filter(|item| item.done)
+                        .count();
+                    if done_count > 0 {
+                        done_state.select(Some(done_count - 1));
+                    }
+                    frame.render_stateful_widget(done_widget, sections[1], &mut done_state);
+                } else {
+                    // Highlight pending section
+                    let mut pending_state = ListState::default();
+                    let pending_count = self.items[..=selected_idx]
+                        .iter()
+                        .filter(|item| !item.done)
+                        .count();
+                    if pending_count > 0 {
+                        pending_state.select(Some(pending_count - 1));
+                    }
+                    frame.render_stateful_widget(pending_widget, sections[0], &mut pending_state);
+                    frame.render_widget(done_widget, sections[1]);
+                }
+            } else {
+                // No valid selection, render both without highlighting
+                frame.render_widget(pending_widget, sections[0]);
+                frame.render_widget(done_widget, sections[1]);
+            }
+        } else {
+            // No selection, render both without highlighting
+            frame.render_widget(pending_widget, sections[0]);
+            frame.render_widget(done_widget, sections[1]);
+        }
+
+        let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+        frame.render_widget(help_widget, help_area);
+    }
+
+    fn display_text_internal(&self, index: usize) -> Text {
+        let todo = &self.items[index];
+        let is_selected = Some(index) == self.state.selected();
+        let cursor_prefix = if is_selected { "▶ " } else { "  " };
+        let checkbox = if todo.selected { "[x] " } else { "[ ] " };
+
+        if todo.expanded {
+            let mut text = todo.expanded_text();
+            // Prepend cursor and checkbox to the first line
+            if let Some(first_line) = text.lines.get_mut(0) {
+                first_line.spans.insert(0, Span::raw(checkbox));
+                first_line.spans.insert(0, Span::raw(cursor_prefix));
+            } else {
+                text.lines.insert(
+                    0,
+                    Line::from(vec![Span::raw(cursor_prefix), Span::raw(checkbox)]),
+                );
+            }
+            text
+        } else {
+            let mut spans = vec![Span::raw(cursor_prefix), Span::raw(checkbox)];
+            spans.extend(todo.collapsed_summary());
+            Text::from(Line::from(spans))
+        }
+    }
+
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event_internal(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn handle_key_event_internal(&mut self, key_event: KeyEvent) {
+        //dbg!(key_event);
+        match key_event.code {
+            KEY_QUIT => self.exit(),
+            KEY_NEXT_ITEM => self.select_next_internal(),
+            KEY_PREVIOUS_ITEM => self.select_previous_internal(),
+            KEY_TOGGLE_EXPAND => self.toggle_selected(),
+            KEY_TOGGLE_DONE => self.toggle_done(),
+            KEY_TOGGLE_SELECT => self.toggle_select(),
+            KEY_SNOOZE_DAY => self.snooze_day(),
+            KEY_SNOOZE_WEEK => self.snooze_week(),
+            _ => {}
+        }
+    }
+
+    fn toggle_selected(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.expanded = !item.expanded;
+            }
+        }
+    }
+
+    fn select_next_internal(&mut self) {
+        let len = self.items.len();
+        if len == 0 {
+            return;
+        }
+
+        let current = self.state.selected().unwrap_or(0);
+        let next = if current + 1 >= len { 0 } else { current + 1 };
+        self.state.select(Some(next));
+    }
+
+    fn select_previous_internal(&mut self) {
+        let len = self.items.len();
+        if len == 0 {
+            return;
+        }
+
+        let current = self.state.selected().unwrap_or(0);
+        let previous = if current == 0 { len - 1 } else { current - 1 };
+        self.state.select(Some(previous));
+    }
+
+    fn toggle_done(&mut self) {
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            // If there are selected items, toggle their done status
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    item.done = !item.done;
+                    item.selected = false; // Deselect after toggling
+                    // Collapse item when marked as done
+                    if item.done {
+                        item.expanded = false;
+                    }
+                }
+            }
+        } else if let Some(cursor_idx) = self.state.selected() {
+            // If no items are selected, toggle the item under cursor
+            if let Some(item) = self.items.get_mut(cursor_idx) {
+                item.done = !item.done;
+                // Collapse item when marked as done
+                if item.done {
+                    item.expanded = false;
+                }
+            }
+        }
+
+        // Update pending count
+        self.pending_count = self.items.iter().filter(|item| !item.done).count();
+    }
+
+    fn toggle_select(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(item) = self.items.get_mut(i) {
+                item.selected = !item.selected;
+            }
+        }
+    }
+
+    fn snooze(&mut self, duration: Duration) {
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            // If there are selected items, snooze them
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    let now = Utc::now();
+                    let new_due_date = now + duration;
+                    item.due_date = Some(new_due_date);
+                    item.selected = false; // Deselect after snoozing
+                }
+            }
+        } else if let Some(cursor_idx) = self.state.selected() {
+            // If no items are selected, snooze the item under cursor
+            if let Some(item) = self.items.get_mut(cursor_idx) {
+                let now = Utc::now();
+                let new_due_date = now + duration;
+                item.due_date = Some(new_due_date);
+            }
+        }
+    }
+
+    fn snooze_day(&mut self) {
+        self.snooze(Duration::days(1));
+    }
+
+    fn snooze_week(&mut self) {
+        self.snooze(Duration::days(7));
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+}
+
+impl From<TodoItem> for Todo {
+    fn from(item: TodoItem) -> Self {
+        Todo {
+            title: item.title,
+            comment: item.comment,
+            expanded: false,
+            done: item.done,
+            selected: false,
+            due_date: item.due_date,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        text::{Span, Text},
+    };
+
+    // Helper function to convert spans to plain text for testing
+    fn spans_to_string(spans: &[Span]) -> String {
+        spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>()
+    }
+
+    // Helper function to convert Text to plain text for testing
+    fn text_to_string(text: &Text) -> String {
+        text.lines
+            .iter()
+            .map(|line| spans_to_string(&line.spans))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn toggle_selected_via_key_event() {
+        let items = vec![Todo {
+            title: String::from("a"),
+            comment: Some(String::from("comment")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        }];
+        let mut app = App::new(items);
+
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
+        assert!(app.items[0].expanded);
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
+        assert!(!app.items[0].expanded);
+    }
+
+    #[test]
+    fn collapsed_summary_marks_expandable_items() {
+        let with_comment = Todo {
+            title: String::from("a"),
+            comment: Some(String::from("comment")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a >");
+
+        let without_comment = Todo {
+            title: String::from("b"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(spans_to_string(&without_comment.collapsed_summary()), "b");
+    }
+
+    #[test]
+    fn expanded_text_indents_comment() {
+        let todo = Todo {
+            title: String::from("a"),
+            comment: Some(String::from("line1\nline2")),
+            expanded: true,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(
+            text_to_string(&todo.expanded_text()),
+            "a >>>\n         line1\n         line2"
+        );
+    }
+
+    #[test]
+    fn display_text_prefixes_cursor() {
+        let items = vec![
+            Todo {
+                title: String::from("a"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+            },
+            Todo {
+                title: String::from("b"),
+                comment: Some(String::from("c1\nc2")),
+                expanded: true,
+                done: false,
+                selected: false,
+                due_date: None,
+            },
+        ];
+        let app = App::new(items);
+
+        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
+        assert_eq!(
+            text_to_string(&app.display_text_internal(1)),
+            "  [ ] b >>>\n         c1\n         c2"
+        );
+    }
+
+    #[test]
+    fn visual_indicators_for_todo_states() {
+        // Test collapsed item with comment (shows 📋)
+        let collapsed_with_comment = Todo {
+            title: String::from("Task with details"),
+            comment: Some(String::from("Some details")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(
+            spans_to_string(&collapsed_with_comment.collapsed_summary()),
+            "Task with details >"
+        );
+
+        // Test expanded item with comment (shows 📖)
+        let expanded_with_comment = Todo {
+            title: String::from("Task with details"),
+            comment: Some(String::from("Some details")),
+            expanded: true,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(
+            text_to_string(&expanded_with_comment.expanded_text()),
+            "Task with details >>>\n         Some details"
+        );
+
+        // Test item without comment (no icon)
+        let no_comment = Todo {
+            title: String::from("Simple task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(
+            spans_to_string(&no_comment.collapsed_summary()),
+            "Simple task"
+        );
+
+        // Test item with empty comment (no icon)
+        let empty_comment = Todo {
+            title: String::from("Task with empty comment"),
+            comment: Some(String::from("   ")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        };
+        assert_eq!(
+            spans_to_string(&empty_comment.collapsed_summary()),
+            "Task with empty comment"
+        );
+    }
+
+    #[test]
+    fn draw_displays_help_text() {
+        let backend = TestBackend::new(100, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = App::new(Vec::new());
+
+        terminal.draw(|f| app.draw_internal(f)).unwrap();
+
+        let buf = terminal.backend().buffer();
+        let bottom_y = buf.area.bottom() - 1;
+        let line: String = (0..buf.area.width)
+            .map(|x| buf[(x, bottom_y)].symbol())
+            .collect();
+
+        assert_eq!(line.trim_end(), HELP_TEXT);
+    }
+
+    #[test]
+    fn toggle_done_via_key_event() {
+        let items = vec![
+            Todo {
+                title: String::from("pending task"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+            },
+            Todo {
+                title: String::from("done task"),
+                comment: None,
+                expanded: false,
+                done: true,
+                selected: false,
+                due_date: None,
+            },
+        ];
+        let mut app = App::new(items);
+
+        // Toggle first item from pending to done
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        assert!(app.items[0].done);
+        assert_eq!(app.pending_count, 0);
+
+        // Toggle back to pending
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        assert!(!app.items[0].done);
+        assert_eq!(app.pending_count, 1);
+    }
+
+    #[test]
+    fn toggle_done_works_on_selected_items() {
+        let items = vec![
+            Todo {
+                title: String::from("task 1"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true, // Selected
+                due_date: None,
+            },
+            Todo {
+                title: String::from("task 2"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false, // Not selected (cursor is here)
+                due_date: None,
+            },
+            Todo {
+                title: String::from("task 3"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true, // Selected
+                due_date: None,
+            },
+        ];
+        let mut app = App::new(items);
+        // Manually set cursor to second item
+        app.select_next_internal(); // Move from 0 to 1
+
+        // Toggle done - should affect only selected items (0 and 2), not cursor item (1)
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+
+        assert!(app.items[0].done); // Selected item should be marked done
+        assert!(!app.items[1].done); // Cursor item should remain unchanged
+        assert!(app.items[2].done); // Selected item should be marked done
+        assert_eq!(app.pending_count, 1); // Only one pending item left
+
+        // Items should be deselected after toggling
+        assert!(!app.items[0].selected);
+        assert!(!app.items[1].selected);
+        assert!(!app.items[2].selected);
+    }
+
+    #[test]
+    fn toggle_done_works_on_cursor_when_no_selection() {
+        let items = vec![
+            Todo {
+                title: String::from("task 1"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false, // Not selected
+                due_date: None,
+            },
+            Todo {
+                title: String::from("task 2"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false, // Not selected (cursor is here)
+                due_date: None,
+            },
+        ];
+        let mut app = App::new(items);
+        // Manually set cursor to second item
+        app.select_next_internal(); // Move from 0 to 1
+
+        // Toggle done - should affect cursor item since no items are selected
+        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+
+        assert!(!app.items[0].done); // First item should remain unchanged
+        assert!(app.items[1].done); // Cursor item should be marked done
+        assert_eq!(app.pending_count, 1); // One pending item left
+    }
+
+    #[test]
+    fn snooze_functionality() {
+        let items = vec![Todo {
+            title: String::from("task 1"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        }];
+        let mut app = App::new(items);
+
+        // Test snooze day
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
+
+        // Test snooze week
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_WEEK, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
+
+        // The due date should be in the future
+        let due_date = app.items[0].due_date.unwrap();
+        let now = Utc::now();
+        assert!(due_date > now);
+    }
+}
