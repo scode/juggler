@@ -209,6 +209,10 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
+    pub fn items(&self) -> &[Todo] {
+        &self.items
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw_internal(frame))?;

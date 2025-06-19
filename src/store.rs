@@ -79,6 +79,47 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     Ok(updated_todo)
 }
 
+pub fn store_todos(todos: &[Todo]) -> io::Result<()> {
+    // Convert Todo items to TodoItem for serialization
+    let todo_items: Vec<TodoItem> = todos
+        .iter()
+        .map(|todo| TodoItem {
+            title: todo.title.clone(),
+            comment: todo.comment.clone(),
+            done: todo.done,
+            due_date: todo.due_date,
+        })
+        .collect();
+
+    // Serialize to YAML
+    let yaml_content = serde_yaml::to_string(&todo_items)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    // Create temporary file in the same directory as TODOs.yaml for atomic rename
+    let temp_file = NamedTempFile::new_in(".")?;
+    let temp_path = temp_file.path();
+
+    // Write content to temp file
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(temp_path)?;
+
+    file.write_all(yaml_content.as_bytes())?;
+
+    // Ensure data is written to disk before rename
+    file.flush()?;
+    file.sync_all()?;
+
+    // Close the file explicitly
+    drop(file);
+
+    // Atomically replace the original file
+    fs::rename(temp_path, "TODOs.yaml")?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +184,71 @@ comment: "Test comment"
         assert_eq!(item.comment, Some("Test comment".to_string()));
         assert!(!item.done); // Should default to false
         assert!(item.due_date.is_none());
+    }
+
+    #[test]
+    fn store_todos_roundtrip() {
+        use std::env;
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let original_dir = env::current_dir().expect("get current dir");
+
+        // Change to temp directory
+        env::set_current_dir(temp_dir.path()).expect("change to temp dir");
+
+        // Create test todos
+        let test_todos = vec![
+            Todo {
+                title: "Test todo 1".to_string(),
+                comment: Some("Test comment 1".to_string()),
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+            },
+            Todo {
+                title: "Test todo 2".to_string(),
+                comment: None,
+                expanded: false,
+                done: true,
+                selected: false,
+                due_date: Some(chrono::Utc::now()),
+            },
+        ];
+
+        // Store the todos
+        store_todos(&test_todos).expect("store todos");
+
+        // Verify the file was created
+        assert!(std::path::Path::new("TODOs.yaml").exists());
+
+        // Load them back
+        let loaded_todos = load_todos().expect("load todos");
+
+        // Verify they match (accounting for sorting by due date)
+        assert_eq!(loaded_todos.len(), test_todos.len());
+
+        // Find todos by title since order may change due to sorting
+        let loaded_todo1 = loaded_todos
+            .iter()
+            .find(|t| t.title == "Test todo 1")
+            .expect("find todo 1");
+        let loaded_todo2 = loaded_todos
+            .iter()
+            .find(|t| t.title == "Test todo 2")
+            .expect("find todo 2");
+
+        assert_eq!(loaded_todo1.comment, Some("Test comment 1".to_string()));
+        assert!(!loaded_todo1.done);
+        assert!(loaded_todo1.due_date.is_none());
+
+        assert_eq!(loaded_todo2.comment, None);
+        assert!(loaded_todo2.done);
+        assert!(loaded_todo2.due_date.is_some());
+
+        // Change back to original directory
+        env::set_current_dir(original_dir).expect("change back to original dir");
     }
 }
