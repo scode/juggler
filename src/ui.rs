@@ -175,27 +175,36 @@ pub enum DueDateUrgency {
 #[derive(Debug)]
 pub struct App<T: TodoEditor> {
     exit: bool,
-    state: ListState,
     items: Vec<Todo>,
     pending_count: usize,
+    current_section: Section,
+    pending_index: usize,
+    done_index: usize,
     editor: T,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Section {
+    Pending,
+    Done,
 }
 
 impl<T: TodoEditor> App<T> {
     pub fn new(items: Vec<Todo>, editor: T) -> Self {
-        let mut state = ListState::default();
-
-        if !items.is_empty() {
-            state.select(Some(0));
-        }
-
         let pending_count = items.iter().filter(|item| !item.done).count();
+        let current_section = if pending_count > 0 {
+            Section::Pending
+        } else {
+            Section::Done
+        };
 
         App {
             exit: false,
-            state,
             items,
             pending_count,
+            current_section,
+            pending_index: 0,
+            done_index: 0,
             editor,
         }
     }
@@ -261,43 +270,20 @@ impl<T: TodoEditor> App<T> {
         let done_widget =
             List::new(done_items).block(Block::default().title("Done").borders(Borders::ALL));
 
-        // Determine which section to highlight based on selection
-        if let Some(selected_idx) = self.state.selected() {
-            if let Some(selected_item) = self.items.get(selected_idx) {
-                if selected_item.done {
-                    // Highlight done section
-                    frame.render_widget(pending_widget, sections[0]);
-                    let mut done_state = ListState::default();
-                    let done_count = self.items[..=selected_idx]
-                        .iter()
-                        .filter(|item| item.done)
-                        .count();
-                    if done_count > 0 {
-                        done_state.select(Some(done_count - 1));
-                    }
-                    frame.render_stateful_widget(done_widget, sections[1], &mut done_state);
-                } else {
-                    // Highlight pending section
-                    let mut pending_state = ListState::default();
-                    let pending_count = self.items[..=selected_idx]
-                        .iter()
-                        .filter(|item| !item.done)
-                        .count();
-                    if pending_count > 0 {
-                        pending_state.select(Some(pending_count - 1));
-                    }
-                    frame.render_stateful_widget(pending_widget, sections[0], &mut pending_state);
-                    frame.render_widget(done_widget, sections[1]);
-                }
-            } else {
-                // No valid selection, render both without highlighting
-                frame.render_widget(pending_widget, sections[0]);
+        // Determine which section to highlight based on current section
+        match self.current_section {
+            Section::Pending => {
+                let mut pending_state = ListState::default();
+                pending_state.select(Some(self.pending_index));
+                frame.render_stateful_widget(pending_widget, sections[0], &mut pending_state);
                 frame.render_widget(done_widget, sections[1]);
             }
-        } else {
-            // No selection, render both without highlighting
-            frame.render_widget(pending_widget, sections[0]);
-            frame.render_widget(done_widget, sections[1]);
+            Section::Done => {
+                frame.render_widget(pending_widget, sections[0]);
+                let mut done_state = ListState::default();
+                done_state.select(Some(self.done_index));
+                frame.render_stateful_widget(done_widget, sections[1], &mut done_state);
+            }
         }
 
         let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
@@ -306,7 +292,7 @@ impl<T: TodoEditor> App<T> {
 
     fn display_text_internal(&self, index: usize) -> Text {
         let todo = &self.items[index];
-        let is_selected = Some(index) == self.state.selected();
+        let is_selected = Some(index) == self.get_selected_item_index();
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
         let checkbox = if todo.selected { "[x] " } else { "[ ] " };
 
@@ -364,7 +350,7 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_selected(&mut self) {
-        if let Some(i) = self.state.selected() {
+        if let Some(i) = self.get_selected_item_index() {
             if let Some(item) = self.items.get_mut(i) {
                 item.expanded = !item.expanded;
             }
@@ -372,25 +358,81 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn select_next_internal(&mut self) {
-        let len = self.items.len();
-        if len == 0 {
-            return;
-        }
+        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
+        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
 
-        let current = self.state.selected().unwrap_or(0);
-        let next = if current + 1 >= len { 0 } else { current + 1 };
-        self.state.select(Some(next));
+        match self.current_section {
+            Section::Pending => {
+                if !pending_items.is_empty() {
+                    self.pending_index += 1;
+                    if self.pending_index >= pending_items.len() {
+                        // Move to done section if available
+                        if !done_items.is_empty() {
+                            self.current_section = Section::Done;
+                            self.done_index = 0;
+                        } else {
+                            // Wrap around to beginning of pending
+                            self.pending_index = 0;
+                        }
+                    }
+                }
+            }
+            Section::Done => {
+                if !done_items.is_empty() {
+                    self.done_index += 1;
+                    if self.done_index >= done_items.len() {
+                        // Move to pending section if available
+                        if !pending_items.is_empty() {
+                            self.current_section = Section::Pending;
+                            self.pending_index = 0;
+                        } else {
+                            // Wrap around to beginning of done
+                            self.done_index = 0;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn select_previous_internal(&mut self) {
-        let len = self.items.len();
-        if len == 0 {
-            return;
-        }
+        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
+        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
 
-        let current = self.state.selected().unwrap_or(0);
-        let previous = if current == 0 { len - 1 } else { current - 1 };
-        self.state.select(Some(previous));
+        match self.current_section {
+            Section::Pending => {
+                if !pending_items.is_empty() {
+                    if self.pending_index == 0 {
+                        // Move to end of done section if available
+                        if !done_items.is_empty() {
+                            self.current_section = Section::Done;
+                            self.done_index = done_items.len() - 1;
+                        } else {
+                            // Wrap around to end of pending
+                            self.pending_index = pending_items.len() - 1;
+                        }
+                    } else {
+                        self.pending_index -= 1;
+                    }
+                }
+            }
+            Section::Done => {
+                if !done_items.is_empty() {
+                    if self.done_index == 0 {
+                        // Move to end of pending section if available
+                        if !pending_items.is_empty() {
+                            self.current_section = Section::Pending;
+                            self.pending_index = pending_items.len() - 1;
+                        } else {
+                            // Wrap around to end of done
+                            self.done_index = done_items.len() - 1;
+                        }
+                    } else {
+                        self.done_index -= 1;
+                    }
+                }
+            }
+        }
     }
 
     fn toggle_done(&mut self) {
@@ -413,7 +455,7 @@ impl<T: TodoEditor> App<T> {
                     }
                 }
             }
-        } else if let Some(cursor_idx) = self.state.selected() {
+        } else if let Some(cursor_idx) = self.get_selected_item_index() {
             // If no items are selected, toggle the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 item.done = !item.done;
@@ -426,10 +468,13 @@ impl<T: TodoEditor> App<T> {
 
         // Update pending count
         self.pending_count = self.items.iter().filter(|item| !item.done).count();
+
+        // Adjust indices after toggling done status
+        self.adjust_indices_after_toggle();
     }
 
     fn toggle_select(&mut self) {
-        if let Some(i) = self.state.selected() {
+        if let Some(i) = self.get_selected_item_index() {
             if let Some(item) = self.items.get_mut(i) {
                 item.selected = !item.selected;
             }
@@ -465,7 +510,7 @@ impl<T: TodoEditor> App<T> {
                     item.selected = false; // Deselect after snoozing
                 }
             }
-        } else if let Some(cursor_idx) = self.state.selected() {
+        } else if let Some(cursor_idx) = self.get_selected_item_index() {
             // If no items are selected, snooze the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 let now = Utc::now();
@@ -495,7 +540,7 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn edit_item(&mut self) {
-        if let Some(cursor_idx) = self.state.selected() {
+        if let Some(cursor_idx) = self.get_selected_item_index() {
             if let Some(item) = self.items.get(cursor_idx) {
                 let result = self.editor.edit_todo(item);
 
@@ -516,6 +561,64 @@ impl<T: TodoEditor> App<T> {
 
     fn exit(&mut self) {
         self.exit = true;
+    }
+
+    fn get_selected_item_index(&self) -> Option<usize> {
+        let pending_items: Vec<(usize, &Todo)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| !item.done)
+            .collect();
+        let done_items: Vec<(usize, &Todo)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.done)
+            .collect();
+
+        match self.current_section {
+            Section::Pending => {
+                if self.pending_index < pending_items.len() {
+                    Some(pending_items[self.pending_index].0)
+                } else {
+                    None
+                }
+            }
+            Section::Done => {
+                if self.done_index < done_items.len() {
+                    Some(done_items[self.done_index].0)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn adjust_indices_after_toggle(&mut self) {
+        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
+        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
+
+        // Clamp indices to valid ranges
+        if pending_items.is_empty() {
+            self.pending_index = 0;
+            if self.current_section == Section::Pending && !done_items.is_empty() {
+                self.current_section = Section::Done;
+                self.done_index = 0;
+            }
+        } else if self.pending_index >= pending_items.len() {
+            self.pending_index = pending_items.len() - 1;
+        }
+
+        if done_items.is_empty() {
+            self.done_index = 0;
+            if self.current_section == Section::Done && !pending_items.is_empty() {
+                self.current_section = Section::Pending;
+                self.pending_index = 0;
+            }
+        } else if self.done_index >= done_items.len() {
+            self.done_index = done_items.len() - 1;
+        }
     }
 }
 
