@@ -11,6 +11,23 @@ use ratatui::{
 
 use crate::store::{TodoItem, edit_todo_item};
 
+pub trait TodoEditor {
+    fn edit_todo(&self, todo: &Todo) -> io::Result<Todo>;
+    fn needs_terminal_restoration(&self) -> bool;
+}
+
+pub struct ExternalEditor;
+
+impl TodoEditor for ExternalEditor {
+    fn edit_todo(&self, todo: &Todo) -> io::Result<Todo> {
+        edit_todo_item(todo)
+    }
+
+    fn needs_terminal_restoration(&self) -> bool {
+        true
+    }
+}
+
 pub const HELP_TEXT: &str =
     "o - open, j/k - nav, x - select, e - done, E - edit, s - snooze 1d, S - snooze 7d, q - quit";
 
@@ -156,15 +173,16 @@ pub enum DueDateUrgency {
 }
 
 #[derive(Debug)]
-pub struct App {
+pub struct App<T: TodoEditor> {
     exit: bool,
     state: ListState,
     items: Vec<Todo>,
     pending_count: usize,
+    editor: T,
 }
 
-impl App {
-    pub fn new(items: Vec<Todo>) -> Self {
+impl<T: TodoEditor> App<T> {
+    pub fn new(items: Vec<Todo>, editor: T) -> Self {
         let mut state = ListState::default();
 
         if !items.is_empty() {
@@ -178,13 +196,14 @@ impl App {
             state,
             items,
             pending_count,
+            editor,
         }
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw_internal(frame))?;
-            self.handle_events()?;
+            self.handle_events(terminal)?;
         }
         Ok(())
     }
@@ -311,10 +330,17 @@ impl App {
         }
     }
 
-    fn handle_events(&mut self) -> io::Result<()> {
+    fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event_internal(key_event)
+                if key_event.code == KEY_EDIT && self.editor.needs_terminal_restoration() {
+                    // Special handling for external editor - restore and reinitialize terminal
+                    ratatui::restore();
+                    self.edit_item();
+                    *terminal = ratatui::init();
+                } else {
+                    self.handle_key_event_internal(key_event);
+                }
             }
             _ => {}
         };
@@ -471,7 +497,9 @@ impl App {
     fn edit_item(&mut self) {
         if let Some(cursor_idx) = self.state.selected() {
             if let Some(item) = self.items.get(cursor_idx) {
-                match edit_todo_item(item) {
+                let result = self.editor.edit_todo(item);
+
+                match result {
                     Ok(updated_item) => {
                         self.items[cursor_idx] = updated_item;
                         // Update pending count in case done status changed
@@ -532,6 +560,20 @@ mod tests {
             .join("\n")
     }
 
+    // Test-only editor that doesn't do anything
+    struct NoOpEditor;
+
+    impl TodoEditor for NoOpEditor {
+        fn edit_todo(&self, todo: &Todo) -> io::Result<Todo> {
+            // Return the todo unchanged
+            Ok(todo.clone())
+        }
+
+        fn needs_terminal_restoration(&self) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn toggle_selected_via_key_event() {
         let items = vec![Todo {
@@ -542,8 +584,7 @@ mod tests {
             selected: false,
             due_date: None,
         }];
-        let mut app = App::new(items);
-
+        let mut app = App::new(items, NoOpEditor);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
         assert!(app.items[0].expanded);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
@@ -609,7 +650,7 @@ mod tests {
                 due_date: None,
             },
         ];
-        let app = App::new(items);
+        let app = App::new(items, NoOpEditor);
 
         assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
         assert_eq!(
@@ -682,7 +723,7 @@ mod tests {
         let backend = TestBackend::new(100, 10);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let mut app = App::new(Vec::new());
+        let mut app = App::new(Vec::new(), NoOpEditor);
 
         terminal.draw(|f| app.draw_internal(f)).unwrap();
 
@@ -715,7 +756,7 @@ mod tests {
                 due_date: None,
             },
         ];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         // Toggle first item from pending to done
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
@@ -756,7 +797,7 @@ mod tests {
                 due_date: None,
             },
         ];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
         // Manually set cursor to second item
         app.select_next_internal(); // Move from 0 to 1
 
@@ -794,7 +835,7 @@ mod tests {
                 due_date: None,
             },
         ];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
         // Manually set cursor to second item
         app.select_next_internal(); // Move from 0 to 1
 
@@ -816,7 +857,7 @@ mod tests {
             selected: false,
             due_date: None,
         }];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         // Test snooze day
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
@@ -843,7 +884,7 @@ mod tests {
             selected: false,
             due_date: Some(past_date),
         }];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         let before_snooze = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
@@ -870,7 +911,7 @@ mod tests {
             selected: false,
             due_date: Some(future_date),
         }];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
 
@@ -893,7 +934,7 @@ mod tests {
             selected: false,
             due_date: None,
         }];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         let before_snooze = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
@@ -948,7 +989,7 @@ mod tests {
                 due_date: Some(past_date),
             },
         ];
-        let mut app = App::new(items);
+        let mut app = App::new(items, NoOpEditor);
 
         let before_snooze = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
