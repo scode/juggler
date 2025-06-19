@@ -421,7 +421,18 @@ impl App {
             for i in selected_indices {
                 if let Some(item) = self.items.get_mut(i) {
                     let now = Utc::now();
-                    let new_due_date = now + duration;
+                    let new_due_date = if let Some(current_due) = item.due_date {
+                        if current_due <= now {
+                            // If current due date is in the past, set to current time + snooze period
+                            now + duration
+                        } else {
+                            // If current due date is in the future, add snooze period to existing due date
+                            current_due + duration
+                        }
+                    } else {
+                        // If no due date exists, set to current time + snooze period
+                        now + duration
+                    };
                     item.due_date = Some(new_due_date);
                     item.selected = false; // Deselect after snoozing
                 }
@@ -430,7 +441,18 @@ impl App {
             // If no items are selected, snooze the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 let now = Utc::now();
-                let new_due_date = now + duration;
+                let new_due_date = if let Some(current_due) = item.due_date {
+                    if current_due <= now {
+                        // If current due date is in the past, set to current time + snooze period
+                        now + duration
+                    } else {
+                        // If current due date is in the future, add snooze period to existing due date
+                        current_due + duration
+                    }
+                } else {
+                    // If no due date exists, set to current time + snooze period
+                    now + duration
+                };
                 item.due_date = Some(new_due_date);
             }
         }
@@ -788,5 +810,155 @@ mod tests {
         let due_date = app.items[0].due_date.unwrap();
         let now = Utc::now();
         assert!(due_date > now);
+    }
+
+    #[test]
+    fn snooze_with_past_due_date() {
+        let past_date = Utc::now() - Duration::days(2); // 2 days ago
+        let items = vec![Todo {
+            title: String::from("overdue task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(past_date),
+        }];
+        let mut app = App::new(items);
+
+        let before_snooze = Utc::now();
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        let after_snooze = Utc::now();
+
+        let new_due_date = app.items[0].due_date.unwrap();
+
+        // Should be set to current time + 1 day, not past_date + 1 day
+        let expected_min = before_snooze + Duration::days(1);
+        let expected_max = after_snooze + Duration::days(1);
+
+        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+        assert!(new_due_date > Utc::now()); // Should be in the future
+    }
+
+    #[test]
+    fn snooze_with_future_due_date() {
+        let future_date = Utc::now() + Duration::days(3); // 3 days from now
+        let items = vec![Todo {
+            title: String::from("future task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(future_date),
+        }];
+        let mut app = App::new(items);
+
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+
+        let new_due_date = app.items[0].due_date.unwrap();
+        let expected_due_date = future_date + Duration::days(1);
+
+        // Should add 1 day to the existing future due date
+        let diff = (new_due_date - expected_due_date).num_seconds().abs();
+        assert!(diff < 5); // Allow small timing differences
+        assert!(new_due_date > future_date); // Should be later than original
+    }
+
+    #[test]
+    fn snooze_with_no_due_date() {
+        let items = vec![Todo {
+            title: String::from("task without due date"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+        }];
+        let mut app = App::new(items);
+
+        let before_snooze = Utc::now();
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        let after_snooze = Utc::now();
+
+        let new_due_date = app.items[0].due_date.unwrap();
+
+        // Should be set to current time + 1 day
+        let expected_min = before_snooze + Duration::days(1);
+        let expected_max = after_snooze + Duration::days(1);
+
+        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+        assert!(new_due_date > Utc::now()); // Should be in the future
+    }
+
+    #[test]
+    fn snooze_multiple_selected_items_mixed_due_dates() {
+        let past_date = Utc::now() - Duration::days(1); // 1 day ago
+        let future_date = Utc::now() + Duration::days(2); // 2 days from now
+
+        let items = vec![
+            Todo {
+                title: String::from("overdue task"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true, // Selected
+                due_date: Some(past_date),
+            },
+            Todo {
+                title: String::from("future task"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true, // Selected
+                due_date: Some(future_date),
+            },
+            Todo {
+                title: String::from("no due date task"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true, // Selected
+                due_date: None,
+            },
+            Todo {
+                title: String::from("not selected task"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false, // Not selected
+                due_date: Some(past_date),
+            },
+        ];
+        let mut app = App::new(items);
+
+        let before_snooze = Utc::now();
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        let after_snooze = Utc::now();
+
+        // First item (overdue): should be set to current time + 1 day
+        let new_due_date_1 = app.items[0].due_date.unwrap();
+        let expected_min_1 = before_snooze + Duration::days(1);
+        let expected_max_1 = after_snooze + Duration::days(1);
+        assert!(new_due_date_1 >= expected_min_1 && new_due_date_1 <= expected_max_1);
+
+        // Second item (future): should be original + 1 day
+        let new_due_date_2 = app.items[1].due_date.unwrap();
+        let expected_due_date_2 = future_date + Duration::days(1);
+        let diff_2 = (new_due_date_2 - expected_due_date_2).num_seconds().abs();
+        assert!(diff_2 < 5);
+
+        // Third item (no due date): should be set to current time + 1 day
+        let new_due_date_3 = app.items[2].due_date.unwrap();
+        let expected_min_3 = before_snooze + Duration::days(1);
+        let expected_max_3 = after_snooze + Duration::days(1);
+        assert!(new_due_date_3 >= expected_min_3 && new_due_date_3 <= expected_max_3);
+
+        // Fourth item (not selected): should remain unchanged
+        assert_eq!(app.items[3].due_date, Some(past_date));
+
+        // All selected items should be deselected after snoozing
+        assert!(!app.items[0].selected);
+        assert!(!app.items[1].selected);
+        assert!(!app.items[2].selected);
+        assert!(!app.items[3].selected); // Wasn't selected to begin with
     }
 }
