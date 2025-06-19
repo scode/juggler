@@ -9,16 +9,17 @@ use ratatui::{
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
-use crate::store::TodoItem;
+use crate::store::{TodoItem, edit_todo_item};
 
 pub const HELP_TEXT: &str =
-    "o - open, j/k - nav, x - select, e - done, s - snooze 1d, S - snooze 7d, q - quit";
+    "o - open, j/k - nav, x - select, e - done, E - edit, s - snooze 1d, S - snooze 7d, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
 pub const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
 pub const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
 pub const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
+pub const KEY_EDIT: KeyCode = KeyCode::Char('E');
 pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
 pub const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
@@ -328,6 +329,7 @@ impl App {
             KEY_PREVIOUS_ITEM => self.select_previous_internal(),
             KEY_TOGGLE_EXPAND => self.toggle_selected(),
             KEY_TOGGLE_DONE => self.toggle_done(),
+            KEY_EDIT => self.edit_item(),
             KEY_TOGGLE_SELECT => self.toggle_select(),
             KEY_SNOOZE_DAY => self.snooze_day(),
             KEY_SNOOZE_WEEK => self.snooze_week(),
@@ -464,6 +466,24 @@ impl App {
 
     fn snooze_week(&mut self) {
         self.snooze(Duration::days(7));
+    }
+
+    fn edit_item(&mut self) {
+        if let Some(cursor_idx) = self.state.selected() {
+            if let Some(item) = self.items.get(cursor_idx) {
+                match edit_todo_item(item) {
+                    Ok(updated_item) => {
+                        self.items[cursor_idx] = updated_item;
+                        // Update pending count in case done status changed
+                        self.pending_count = self.items.iter().filter(|item| !item.done).count();
+                    }
+                    Err(_) => {
+                        // Editor failed or was cancelled - do nothing
+                        // In a more sophisticated app, we might show an error message
+                    }
+                }
+            }
+        }
     }
 
     fn exit(&mut self) {
