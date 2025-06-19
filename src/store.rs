@@ -15,8 +15,8 @@ pub struct TodoItem {
     pub due_date: Option<DateTime<Utc>>,
 }
 
-pub fn load_todos() -> io::Result<Vec<Todo>> {
-    let content = fs::read_to_string("TODOs.yaml")?;
+pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> io::Result<Vec<Todo>> {
+    let content = fs::read_to_string(&file_path)?;
     let items: Vec<TodoItem> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let mut todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
@@ -79,7 +79,9 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     Ok(updated_todo)
 }
 
-pub fn store_todos(todos: &[Todo]) -> io::Result<()> {
+pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> io::Result<()> {
+    let file_path = file_path.as_ref();
+
     // Convert Todo items to TodoItem for serialization
     let todo_items: Vec<TodoItem> = todos
         .iter()
@@ -95,8 +97,11 @@ pub fn store_todos(todos: &[Todo]) -> io::Result<()> {
     let yaml_content = serde_yaml::to_string(&todo_items)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    // Create temporary file in the same directory as TODOs.yaml for atomic rename
-    let temp_file = NamedTempFile::new_in(".")?;
+    // Get the directory of the target file for temporary file creation
+    let target_dir = file_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let temp_file = NamedTempFile::new_in(target_dir)?;
     let temp_path = temp_file.path();
 
     // Write content to temp file
@@ -115,7 +120,7 @@ pub fn store_todos(todos: &[Todo]) -> io::Result<()> {
     drop(file);
 
     // Atomically replace the original file
-    fs::rename(temp_path, "TODOs.yaml")?;
+    fs::rename(temp_path, file_path)?;
 
     Ok(())
 }
@@ -126,7 +131,7 @@ mod tests {
 
     #[test]
     fn load_todos_parses_comments() {
-        let todos = load_todos().expect("load TODOs");
+        let todos = load_todos("TODOs.yaml").expect("load TODOs");
         assert_eq!(todos.len(), 6);
         // After sorting, Item 1 is now at index 3 (2031 due date)
         assert_eq!(todos[3].title, "Item 1");
@@ -138,7 +143,7 @@ mod tests {
 
     #[test]
     fn load_todos_handles_done_field() {
-        let todos = load_todos().expect("load TODOs");
+        let todos = load_todos("TODOs.yaml").expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
         // First four items should default to not done
@@ -219,13 +224,14 @@ comment: "Test comment"
         ];
 
         // Store the todos
-        store_todos(&test_todos).expect("store todos");
+        let test_file = "TODOs.yaml";
+        store_todos(&test_todos, test_file).expect("store todos");
 
         // Verify the file was created
         assert!(std::path::Path::new("TODOs.yaml").exists());
 
         // Load them back
-        let loaded_todos = load_todos().expect("load todos");
+        let loaded_todos = load_todos(test_file).expect("load todos");
 
         // Verify they match (accounting for sorting by due date)
         assert_eq!(loaded_todos.len(), test_todos.len());
