@@ -16,7 +16,12 @@ pub struct TodoItem {
 }
 
 pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> io::Result<Vec<Todo>> {
-    let content = fs::read_to_string(&file_path)?;
+    let content = match fs::read_to_string(&file_path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => "[]".to_string(),
+        Err(e) => return Err(e),
+    };
+
     let items: Vec<TodoItem> = serde_yaml::from_str(&content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let mut todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
@@ -253,6 +258,29 @@ comment: "Test comment"
         assert_eq!(loaded_todo2.comment, None);
         assert!(loaded_todo2.done);
         assert!(loaded_todo2.due_date.is_some());
+
+        // Change back to original directory
+        env::set_current_dir(original_dir).expect("change back to original dir");
+    }
+
+    #[test]
+    fn load_todos_handles_missing_file() {
+        use std::env;
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let original_dir = env::current_dir().expect("get current dir");
+
+        // Change to temp directory
+        env::set_current_dir(temp_dir.path()).expect("change to temp dir");
+
+        // Try to load from a non-existent file
+        let non_existent_file = "non_existent_todos.yaml";
+        let todos = load_todos(non_existent_file).expect("load todos from non-existent file");
+
+        // Should return empty vector
+        assert_eq!(todos.len(), 0);
 
         // Change back to original directory
         env::set_current_dir(original_dir).expect("change back to original dir");
