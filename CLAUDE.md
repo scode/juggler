@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cargo clippy` - Run linter
 - `cargo run` - Run the TODO juggler TUI application
 
+**IMPORTANT**: ALWAYS run `cargo fmt` and `cargo clippy` after making changes and tests pass.
+
 ## Code Architecture
 
 This is a Rust terminal user interface (TUI) application built with Ratatui that displays and manages TODO items from YAML files. The application is now modularized into three main components:
