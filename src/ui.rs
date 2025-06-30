@@ -49,6 +49,7 @@ pub struct Todo {
     pub done: bool,
     pub selected: bool,
     pub due_date: Option<DateTime<Utc>>,
+    pub google_task_id: Option<String>,
 }
 
 impl Todo {
@@ -63,7 +64,7 @@ impl Todo {
                 _ => Color::White,
             };
             spans.push(Span::styled(
-                format!("{} ", relative_time),
+                format!("{relative_time} "),
                 Style::default().fg(color),
             ));
         }
@@ -97,7 +98,7 @@ impl Todo {
                 _ => Color::White,
             };
             spans.push(Span::styled(
-                format!("{} ", relative_time),
+                format!("{relative_time} "),
                 Style::default().fg(color),
             ));
         }
@@ -110,7 +111,7 @@ impl Todo {
         if let Some(comment) = &self.comment {
             let mut lines = vec![Line::from(spans)];
             for line in comment.lines() {
-                lines.push(Line::from(vec![Span::raw(format!("         {}", line))]));
+                lines.push(Line::from(vec![Span::raw(format!("         {line}"))]));
             }
             Text::from(lines)
         } else {
@@ -137,13 +138,13 @@ impl Todo {
             };
 
             let time_str = if total_seconds < 0 {
-                format!("-{}{}", value, unit)
+                format!("-{value}{unit}")
             } else {
-                format!("{}{}", value, unit)
+                format!("{value}{unit}")
             };
 
             // Right-pad to 4 characters for alignment
-            format!("{:>4}", time_str)
+            format!("{time_str:>4}")
         })
     }
 
@@ -635,6 +636,7 @@ impl From<TodoItem> for Todo {
             done: item.done,
             selected: false,
             due_date: item.due_date,
+            google_task_id: item.google_task_id,
         }
     }
 }
@@ -690,6 +692,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         }];
         let mut app = App::new(items, NoOpEditor);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
@@ -707,6 +710,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a >");
 
@@ -717,6 +721,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(spans_to_string(&without_comment.collapsed_summary()), "b");
     }
@@ -730,6 +735,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(
             text_to_string(&todo.expanded_text()),
@@ -747,6 +753,7 @@ mod tests {
                 done: false,
                 selected: false,
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("b"),
@@ -755,6 +762,7 @@ mod tests {
                 done: false,
                 selected: false,
                 due_date: None,
+                google_task_id: None,
             },
         ];
         let app = App::new(items, NoOpEditor);
@@ -776,6 +784,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(
             spans_to_string(&collapsed_with_comment.collapsed_summary()),
@@ -790,6 +799,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(
             text_to_string(&expanded_with_comment.expanded_text()),
@@ -804,6 +814,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(
             spans_to_string(&no_comment.collapsed_summary()),
@@ -818,6 +829,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         };
         assert_eq!(
             spans_to_string(&empty_comment.collapsed_summary()),
@@ -853,6 +865,7 @@ mod tests {
                 done: false,
                 selected: false,
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("done task"),
@@ -861,6 +874,7 @@ mod tests {
                 done: true,
                 selected: false,
                 due_date: None,
+                google_task_id: None,
             },
         ];
         let mut app = App::new(items, NoOpEditor);
@@ -886,6 +900,7 @@ mod tests {
                 done: false,
                 selected: true, // Selected
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("task 2"),
@@ -894,6 +909,7 @@ mod tests {
                 done: false,
                 selected: false, // Not selected (cursor is here)
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("task 3"),
@@ -902,6 +918,7 @@ mod tests {
                 done: false,
                 selected: true, // Selected
                 due_date: None,
+                google_task_id: None,
             },
         ];
         let mut app = App::new(items, NoOpEditor);
@@ -932,6 +949,7 @@ mod tests {
                 done: false,
                 selected: false, // Not selected
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("task 2"),
@@ -940,6 +958,7 @@ mod tests {
                 done: false,
                 selected: false, // Not selected (cursor is here)
                 due_date: None,
+                google_task_id: None,
             },
         ];
         let mut app = App::new(items, NoOpEditor);
@@ -963,6 +982,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         }];
         let mut app = App::new(items, NoOpEditor);
 
@@ -990,6 +1010,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: Some(past_date),
+            google_task_id: None,
         }];
         let mut app = App::new(items, NoOpEditor);
 
@@ -1017,6 +1038,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: Some(future_date),
+            google_task_id: None,
         }];
         let mut app = App::new(items, NoOpEditor);
 
@@ -1040,6 +1062,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            google_task_id: None,
         }];
         let mut app = App::new(items, NoOpEditor);
 
@@ -1070,6 +1093,7 @@ mod tests {
                 done: false,
                 selected: true, // Selected
                 due_date: Some(past_date),
+                google_task_id: None,
             },
             Todo {
                 title: String::from("future task"),
@@ -1078,6 +1102,7 @@ mod tests {
                 done: false,
                 selected: true, // Selected
                 due_date: Some(future_date),
+                google_task_id: None,
             },
             Todo {
                 title: String::from("no due date task"),
@@ -1086,6 +1111,7 @@ mod tests {
                 done: false,
                 selected: true, // Selected
                 due_date: None,
+                google_task_id: None,
             },
             Todo {
                 title: String::from("not selected task"),
@@ -1094,6 +1120,7 @@ mod tests {
                 done: false,
                 selected: false, // Not selected
                 due_date: Some(past_date),
+                google_task_id: None,
             },
         ];
         let mut app = App::new(items, NoOpEditor);
