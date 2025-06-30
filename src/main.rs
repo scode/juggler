@@ -1,3 +1,5 @@
+use env_logger::Builder;
+use log::LevelFilter;
 use std::io;
 
 use log::{error, info};
@@ -38,7 +40,8 @@ enum SyncService {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    env_logger::init();
+    let mut builder = Builder::from_default_env();
+    builder.filter(None, LevelFilter::Info).init();
 
     let cli = Cli::parse();
     let todos_file = "TODOs.yaml";
