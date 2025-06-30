@@ -355,7 +355,6 @@ async fn sync_to_tasks_with_base_url(
                                 )
                                 .into());
                             }
-                            info!("Updated Google Task: '{}'", updated_task.title);
                         }
                     }
                 } else {
