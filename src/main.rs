@@ -1,5 +1,7 @@
 use std::io;
 
+use log::{error, info};
+
 mod store;
 mod ui;
 
@@ -48,20 +50,20 @@ async fn main() -> io::Result<()> {
                 SyncService::GoogleTasks { token, dry_run } => {
                     let mut todos = load_todos(todos_file)?;
 
-                    println!("Syncing TODOs with Google Tasks...");
+                    info!("Syncing TODOs with Google Tasks...");
 
                     if let Err(e) = sync_to_tasks(&mut todos, &token, dry_run).await {
-                        eprintln!("Error syncing with Google Tasks: {e}");
+                        error!("Error syncing with Google Tasks: {e}");
                         return Err(io::Error::other(e.to_string()));
                     }
 
                     // Save the updated todos with new google_task_ids
                     if let Err(e) = store_todos(&todos, todos_file) {
-                        eprintln!("Warning: Failed to save todos after sync: {e}");
+                        error!("Warning: Failed to save todos after sync: {e}");
                         return Err(e);
                     }
 
-                    println!("Sync completed successfully!");
+                    info!("Sync completed successfully!");
                 }
             }
         }
@@ -75,7 +77,7 @@ async fn main() -> io::Result<()> {
 
             // Save todos when exiting
             if let Err(e) = store_todos(app.items(), todos_file) {
-                eprintln!("Warning: Failed to save todos: {e}");
+                error!("Warning: Failed to save todos: {e}");
             }
 
             return app_result;
