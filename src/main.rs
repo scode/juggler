@@ -4,15 +4,21 @@ use std::io;
 
 use log::{error, info};
 
+mod oauth;
 mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
+use oauth::run_oauth_flow;
 use store::{
     GoogleOAuthClient, GoogleOAuthCredentials, load_todos, store_todos, sync_to_tasks,
     sync_to_tasks_with_oauth,
 };
 use ui::{App, ExternalEditor};
+
+/// Google OAuth client ID for the juggler application
+const GOOGLE_OAUTH_CLIENT_ID: &str =
+    "427291927957-ahaf2g5gp42oo70chpt3c189d6i7bhl8.apps.googleusercontent.com";
 
 #[derive(Parser)]
 #[command(name = "juggler")]
@@ -28,6 +34,10 @@ enum Commands {
         #[command(subcommand)]
         service: SyncService,
     },
+    Login {
+        #[arg(long, default_value = "8080", help = "Local port for OAuth callback")]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand)]
@@ -41,10 +51,6 @@ enum SyncService {
         token: Option<String>,
         #[arg(long, help = "OAuth refresh token for Google Tasks API")]
         refresh_token: Option<String>,
-        #[arg(long, help = "OAuth client ID for Google Tasks API")]
-        client_id: Option<String>,
-        #[arg(long, help = "OAuth client secret for Google Tasks API")]
-        client_secret: Option<String>,
         #[arg(long, help = "Log actions without executing them")]
         dry_run: bool,
     },
@@ -59,14 +65,44 @@ async fn main() -> io::Result<()> {
     let todos_file = "TODOs.yaml";
 
     match cli.command {
+        Some(Commands::Login { port }) => {
+            // OAuth browser login flow
+            info!("Starting OAuth login flow...");
+
+            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
+                Ok(result) => {
+                    println!("\n🎉 Authentication successful!");
+                    println!("\nYou can now sync your TODOs with Google Tasks using:");
+                    println!();
+                    println!(
+                        "juggler sync google-tasks --refresh-token \"{}\"",
+                        result.refresh_token
+                    );
+                    println!();
+                    println!(
+                        "💡 Tip: Save this refresh token securely. It provides long-term access without needing to re-authenticate."
+                    );
+                    println!();
+                    println!("For security, consider storing it as an environment variable:");
+                    println!("export JUGGLER_REFRESH_TOKEN=\"{}\"", result.refresh_token);
+                    println!();
+                    println!("Then sync with:");
+                    println!(
+                        "juggler sync google-tasks --refresh-token \"$JUGGLER_REFRESH_TOKEN\""
+                    );
+                }
+                Err(e) => {
+                    error!("Authentication failed: {e}");
+                    return Err(io::Error::other(e.to_string()));
+                }
+            }
+        }
         Some(Commands::Sync { service }) => {
             // CLI mode: handle sync commands
             match service {
                 SyncService::GoogleTasks {
                     token,
                     refresh_token,
-                    client_id,
-                    client_secret,
                     dry_run,
                 } => {
                     let mut todos = load_todos(todos_file)?;
@@ -74,9 +110,9 @@ async fn main() -> io::Result<()> {
                     info!("Syncing TODOs with Google Tasks...");
 
                     // Determine authentication method
-                    match (token, refresh_token, client_id, client_secret) {
+                    match (token, refresh_token) {
                         // Legacy bearer token authentication
-                        (Some(token), None, None, None) => {
+                        (Some(token), None) => {
                             info!("Using bearer token authentication (deprecated)");
                             if let Err(e) = sync_to_tasks(&mut todos, &token, dry_run).await {
                                 error!("Error syncing with Google Tasks: {e}");
@@ -84,11 +120,10 @@ async fn main() -> io::Result<()> {
                             }
                         }
                         // OAuth refresh token authentication
-                        (None, Some(refresh_token), Some(client_id), Some(client_secret)) => {
+                        (None, Some(refresh_token)) => {
                             info!("Using OAuth refresh token authentication");
                             let credentials = GoogleOAuthCredentials {
-                                client_id,
-                                client_secret,
+                                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                                 refresh_token,
                             };
                             let oauth_client = GoogleOAuthClient::new(credentials);
@@ -105,9 +140,7 @@ async fn main() -> io::Result<()> {
                             error!("Invalid authentication configuration. Either provide:");
                             error!("  --token <TOKEN> (deprecated)");
                             error!("  OR");
-                            error!(
-                                "  --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>"
-                            );
+                            error!("  --refresh-token <REFRESH_TOKEN>");
                             return Err(io::Error::other("Invalid authentication configuration"));
                         }
                     }
