@@ -8,7 +8,10 @@ mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use store::{load_todos, store_todos, sync_to_tasks};
+use store::{
+    GoogleOAuthClient, GoogleOAuthCredentials, load_todos, store_todos, sync_to_tasks,
+    sync_to_tasks_with_oauth,
+};
 use ui::{App, ExternalEditor};
 
 #[derive(Parser)]
@@ -31,8 +34,17 @@ enum Commands {
 enum SyncService {
     #[command(name = "google-tasks")]
     GoogleTasks {
-        #[arg(long, help = "OAuth access token for Google Tasks API")]
-        token: String,
+        #[arg(
+            long,
+            help = "OAuth access token for Google Tasks API (deprecated, use --refresh-token instead)"
+        )]
+        token: Option<String>,
+        #[arg(long, help = "OAuth refresh token for Google Tasks API")]
+        refresh_token: Option<String>,
+        #[arg(long, help = "OAuth client ID for Google Tasks API")]
+        client_id: Option<String>,
+        #[arg(long, help = "OAuth client secret for Google Tasks API")]
+        client_secret: Option<String>,
         #[arg(long, help = "Log actions without executing them")]
         dry_run: bool,
     },
@@ -50,14 +62,54 @@ async fn main() -> io::Result<()> {
         Some(Commands::Sync { service }) => {
             // CLI mode: handle sync commands
             match service {
-                SyncService::GoogleTasks { token, dry_run } => {
+                SyncService::GoogleTasks {
+                    token,
+                    refresh_token,
+                    client_id,
+                    client_secret,
+                    dry_run,
+                } => {
                     let mut todos = load_todos(todos_file)?;
 
                     info!("Syncing TODOs with Google Tasks...");
 
-                    if let Err(e) = sync_to_tasks(&mut todos, &token, dry_run).await {
-                        error!("Error syncing with Google Tasks: {e}");
-                        return Err(io::Error::other(e.to_string()));
+                    // Determine authentication method
+                    match (token, refresh_token, client_id, client_secret) {
+                        // Legacy bearer token authentication
+                        (Some(token), None, None, None) => {
+                            info!("Using bearer token authentication (deprecated)");
+                            if let Err(e) = sync_to_tasks(&mut todos, &token, dry_run).await {
+                                error!("Error syncing with Google Tasks: {e}");
+                                return Err(io::Error::other(e.to_string()));
+                            }
+                        }
+                        // OAuth refresh token authentication
+                        (None, Some(refresh_token), Some(client_id), Some(client_secret)) => {
+                            info!("Using OAuth refresh token authentication");
+                            let credentials = GoogleOAuthCredentials {
+                                client_id,
+                                client_secret,
+                                refresh_token,
+                            };
+                            let oauth_client = GoogleOAuthClient::new(credentials);
+
+                            if let Err(e) =
+                                sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await
+                            {
+                                error!("Error syncing with Google Tasks: {e}");
+                                return Err(io::Error::other(e.to_string()));
+                            }
+                        }
+                        // Invalid combination of arguments
+                        _ => {
+                            error!("Invalid authentication configuration. Either provide:");
+                            error!("  --token <TOKEN> (deprecated)");
+                            error!("  OR");
+                            error!(
+                                "  --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>"
+                            );
+                            return Err(io::Error::other("Invalid authentication configuration"));
+                        }
                     }
 
                     // Save the updated todos with new google_task_ids
