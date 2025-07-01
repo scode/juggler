@@ -11,9 +11,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cargo run` - Run the TODO juggler TUI application
 
 **CLI Commands:**
-- `cargo run -- sync google-tasks --token <TOKEN>` - Sync with Google Tasks
-- `cargo run -- sync google-tasks --token <TOKEN> --dry-run` - Test sync without changes
-- `RUST_LOG=info cargo run -- sync google-tasks --token <TOKEN>` - Sync with logging
+
+*OAuth Refresh Token Authentication (Recommended):*
+- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>` - Sync with Google Tasks using OAuth
+- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> --dry-run` - Test sync without changes
+- `RUST_LOG=info cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>` - Sync with logging
+
+*Legacy Bearer Token Authentication (Deprecated):*
+- `cargo run -- sync google-tasks --token <TOKEN>` - Sync with Google Tasks using bearer token (deprecated)
+- `cargo run -- sync google-tasks --token <TOKEN> --dry-run` - Test sync without changes (deprecated)
+- `RUST_LOG=info cargo run -- sync google-tasks --token <TOKEN>` - Sync with logging (deprecated)
 
 **IMPORTANT**: ALWAYS run `cargo fmt` and `cargo clippy` after making changes and tests pass.
 
@@ -39,6 +46,8 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 ### Google Tasks Integration
 
 - **One-way sync**: Local YAML is authoritative, changes push to Google Tasks
+- **Authentication**: OAuth refresh token (recommended) or bearer token (deprecated)
+- **Token management**: Automatic access token refresh with 5-minute buffer
 - **API operations**: Create, update, delete tasks via Google Tasks REST API
 - **Dry-run mode**: Preview changes without execution
 - **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list
