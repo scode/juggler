@@ -14,6 +14,28 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 - **Completion Tracking**: Mark items as done/undone
 - **Snooze Functionality**: Postpone tasks by 1 day or 1 week
 
+## Quick Start
+
+1. **Build the application:**
+   ```bash
+   cargo build --release
+   ```
+
+2. **Create a "juggler" task list in [Google Tasks](https://tasks.google.com/)**
+
+3. **Set up Google OAuth credentials** (see detailed instructions below)
+
+4. **Authenticate with Google:**
+   ```bash
+   ./target/release/juggler login
+   ```
+
+5. **Sync your TODOs:**
+   ```bash
+   ./target/release/juggler sync google-tasks \
+     --refresh-token "YOUR_REFRESH_TOKEN"
+   ```
+
 ## Installation
 
 ```bash
@@ -48,13 +70,20 @@ View available commands:
 
 ```bash
 juggler --help
+juggler login --help
 juggler sync google-tasks --help
 ```
 
-**Available sync options:**
+**Available commands:**
+- `juggler` - Launch interactive TUI mode
+- `juggler login` - Browser-based OAuth authentication
+- `juggler sync google-tasks` - Sync TODOs with Google Tasks
+
+**Login options:**
+- `--port <PORT>`: Local callback port (default: 8080)
+
+**Sync options:**
 - `--refresh-token <REFRESH_TOKEN>`: OAuth refresh token (recommended)
-- `--client-id <CLIENT_ID>`: OAuth client ID (required with refresh token)
-- `--client-secret <CLIENT_SECRET>`: OAuth client secret (required with refresh token)
 - `--token <TOKEN>`: OAuth access token (deprecated, expires quickly)
 - `--dry-run`: Log actions without executing them (safe testing mode)
 
@@ -75,60 +104,44 @@ Juggler can synchronize your TODOs to Google Tasks, pushing your local YAML todo
 2. Create a new task list named exactly **"juggler"**
 3. This is where all your TODO items will be synchronized
 
-**That's it!** For persistent use, set up OAuth refresh tokens (see below). For quick testing, you can use the OAuth 2.0 Playground to get a short-lived access token.
+**That's it!** Now you can authenticate easily with `juggler login` (see below) or manually set up OAuth credentials.
 
 ### Getting Your Google OAuth Credentials
 
 To sync with Google Tasks, you need OAuth credentials from Google. There are two approaches: using refresh tokens (recommended for persistent use) or access tokens (quick but expires in 1 hour).
 
-#### Method 1: OAuth Refresh Token (Recommended)
+#### Method 1: Browser Login (Recommended)
 
-Refresh tokens provide long-term access without needing to re-authenticate frequently. You'll need to set up your own Google Cloud Project for this:
+The simplest way to authenticate is using the built-in browser login flow:
 
-##### Step 1: Set up Google Cloud Project
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or use an existing one)
-3. Enable the **Tasks API**:
-   - Go to "APIs & Services" → "Library"
-   - Search for "Tasks API" and enable it
-4. Create OAuth 2.0 credentials:
-   - Go to "APIs & Services" → "Credentials"
-   - Click "Create Credentials" → "OAuth 2.0 Client IDs"
-   - Choose "Desktop application" as the application type
-   - Name it something like "Juggler TODO App"
-   - Download the credentials JSON file
-
-##### Step 2: Get Your Refresh Token
-
-1. Go to [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/)
-2. Click the gear icon (⚙️) in the top right corner
-3. Check **"Use your own OAuth credentials"**
-4. Enter your **Client ID** and **Client Secret** from the credentials you just created
-5. In the left panel, find **"Tasks API v1"** and expand it
-6. Check the box for: `https://www.googleapis.com/auth/tasks`
-7. Click **"Authorize APIs"**
-8. Sign in to your Google account when prompted and click **"Allow"**
-9. Click **"Exchange authorization code for tokens"**
-10. Copy these three values:
-    - **Refresh token** (starts with `1//`)
-    - **Client ID** (from your Google Cloud project)
-    - **Client Secret** (from your Google Cloud project)
-
-##### Step 3: Sync with Refresh Token
+##### Step 1: Run Browser Authentication
 
 ```bash
-# Sync using OAuth refresh token (recommended)
-juggler sync google-tasks \
-  --refresh-token "1//YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" \
-  --client-secret "YOUR_CLIENT_SECRET"
+# Launch browser-based authentication
+juggler login
 ```
 
-**Benefits of refresh tokens:**
-- No need to re-authenticate frequently
-- Automatic token refresh when access tokens expire
-- Secure long-term access
+This will:
+1. Start a local web server on port 8080 (customizable with `--port`)
+2. Open your default browser to Google's authentication page
+3. Guide you through the OAuth consent flow
+4. Display the credentials you need for syncing
+
+**Example output:**
+```bash
+🎉 Authentication successful!
+
+You can now sync your TODOs with Google Tasks using:
+
+juggler sync google-tasks --refresh-token "1//04xxxxx-xxxxxxxxxx"
+```
+
+**Benefits:**
+- Secure PKCE OAuth flow
+- Automatic browser integration
+- One-time setup per machine
+- Long-term refresh tokens
+- No Google Cloud Console setup required
 
 #### Method 2: Quick Access Token (Legacy)
 
@@ -154,17 +167,13 @@ Once you have your OAuth credentials, synchronize your TODOs with Google Tasks:
 ```bash
 # Sync with Google Tasks using refresh token
 juggler sync google-tasks \
-  --refresh-token "1//YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" \
-  --client-secret "YOUR_CLIENT_SECRET"
+  --refresh-token "1//YOUR_REFRESH_TOKEN"
 ```
 
 **Example:**
 ```bash
 juggler sync google-tasks \
-  --refresh-token "1//04xxxxx-xxxxxxxxxx" \
-  --client-id "123456789.apps.googleusercontent.com" \
-  --client-secret "GOCSPX-xxxxxxxxxxxxxxx"
+  --refresh-token "1//04xxxxx-xxxxxxxxxx"
 ```
 
 #### Using Access Token (Legacy)
@@ -187,8 +196,6 @@ Test your sync operations without making actual changes:
 # Dry-run mode with refresh token (recommended)
 RUST_LOG=info juggler sync google-tasks \
   --refresh-token "1//YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID" \
-  --client-secret "YOUR_CLIENT_SECRET" \
   --dry-run
 
 # Dry-run mode with access token (legacy)
@@ -208,9 +215,7 @@ Juggler uses Rust's standard logging infrastructure. Control logging output with
 ```bash
 # With refresh token
 RUST_LOG=info juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID" \
-  --client-secret "YOUR_CLIENT_SECRET"
+  --refresh-token "YOUR_REFRESH_TOKEN"
 
 # With access token (legacy)
 RUST_LOG=info juggler sync google-tasks --token "YOUR_TOKEN"
@@ -220,18 +225,14 @@ RUST_LOG=info juggler sync google-tasks --token "YOUR_TOKEN"
 ```bash
 # With refresh token
 RUST_LOG=debug juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID" \
-  --client-secret "YOUR_CLIENT_SECRET"
+  --refresh-token "YOUR_REFRESH_TOKEN"
 ```
 
 **Silent mode (errors only):**
 ```bash
 # With refresh token
 RUST_LOG=error juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN" \
-  --client-id "YOUR_CLIENT_ID" \
-  --client-secret "YOUR_CLIENT_SECRET"
+  --refresh-token "YOUR_REFRESH_TOKEN"
 ```
 
 **Log output includes:**
@@ -265,13 +266,9 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - **Store credentials securely** and consider using environment variables:
   ```bash
   export JUGGLER_REFRESH_TOKEN="1//YOUR_REFRESH_TOKEN"
-  export JUGGLER_CLIENT_ID="YOUR_CLIENT_ID"
-  export JUGGLER_CLIENT_SECRET="YOUR_CLIENT_SECRET"
   
   juggler sync google-tasks \
-    --refresh-token "$JUGGLER_REFRESH_TOKEN" \
-    --client-id "$JUGGLER_CLIENT_ID" \
-    --client-secret "$JUGGLER_CLIENT_SECRET"
+    --refresh-token "$JUGGLER_REFRESH_TOKEN"
   ```
 
 ### Troubleshooting
@@ -281,10 +278,14 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - Make sure you're signed into the same Google account you used to get the token
 
 **"Invalid token" or authentication errors**
-- **Using refresh token**: Your OAuth credentials may be invalid or expired. Verify your client ID, client secret, and refresh token
+- **Using refresh token**: Your OAuth credentials may be invalid or expired. Verify your refresh token
 - **Using access token**: Your access token has expired (they last ~1 hour) - get a new one from the [OAuth Playground](https://developers.google.com/oauthplayground/)
 - Make sure you selected the `https://www.googleapis.com/auth/tasks` scope when getting your credentials
-- For refresh tokens, check that you copied all three values: refresh token (starts with `1//`), client ID, and client secret
+- For refresh tokens, check that you copied the refresh token value (starts with `1//`)
+
+**"Error 401: invalid_client" or authentication errors during login**
+- This should not occur with the latest version as the OAuth client is properly configured
+- If you encounter persistent errors, please file an issue at the project repository
 
 **Tasks not syncing properly**
 - Check that your local TODOs.yaml file is valid YAML
@@ -293,8 +294,6 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
   # With refresh token
   RUST_LOG=info juggler sync google-tasks \
     --refresh-token "YOUR_REFRESH_TOKEN" \
-    --client-id "YOUR_CLIENT_ID" \
-    --client-secret "YOUR_CLIENT_SECRET" \
     --dry-run
   
   # With access token (legacy)

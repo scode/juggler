@@ -172,7 +172,6 @@ struct OAuthTokenResponse {
 #[derive(Debug, Clone)]
 pub struct GoogleOAuthCredentials {
     pub client_id: String,
-    pub client_secret: String,
     pub refresh_token: String,
 }
 
@@ -225,12 +224,27 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        let params = [
-            ("client_id", &self.credentials.client_id),
-            ("client_secret", &self.credentials.client_secret),
-            ("refresh_token", &self.credentials.refresh_token),
-            ("grant_type", &"refresh_token".to_string()),
-        ];
+        // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
+        let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
+
+        let params = if let Some(secret) = &client_secret {
+            info!(
+                "Using client_secret from JUGGLER_CLIENT_SECRET environment variable for token refresh"
+            );
+            vec![
+                ("client_id", self.credentials.client_id.as_str()),
+                ("refresh_token", self.credentials.refresh_token.as_str()),
+                ("grant_type", "refresh_token"),
+                ("client_secret", secret.as_str()),
+            ]
+        } else {
+            info!("No client_secret - using public client token refresh");
+            vec![
+                ("client_id", self.credentials.client_id.as_str()),
+                ("refresh_token", self.credentials.refresh_token.as_str()),
+                ("grant_type", "refresh_token"),
+            ]
+        };
 
         let response = self.client.post(token_url).form(&params).send().await?;
 
@@ -548,6 +562,10 @@ async fn sync_to_tasks_with_base_url(
 
 #[cfg(test)]
 mod tests {
+    /// Any test that relies on a real client id would by definition be buggy
+    /// unless it is an integration test meant to exercise the real oauth flow,
+    /// so use a fake test id here.
+    const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
     use super::*;
 
     #[test]
@@ -1141,8 +1159,9 @@ comment: "Test comment"
             Mock::given(method("POST"))
                 .and(path("/token"))
                 .and(body_string_contains("grant_type=refresh_token"))
-                .and(body_string_contains("client_id=test_client_id"))
-                .and(body_string_contains("client_secret=test_client_secret"))
+                .and(body_string_contains(format!(
+                    "client_id={GOOGLE_OAUTH_CLIENT_ID}"
+                )))
                 .and(body_string_contains("refresh_token=test_refresh_token"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "access_token": "new_access_token",
@@ -1153,8 +1172,7 @@ comment: "Test comment"
                 .await;
 
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1176,8 +1194,7 @@ comment: "Test comment"
         #[tokio::test]
         async fn test_oauth_client_token_caching() {
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1201,8 +1218,9 @@ comment: "Test comment"
             Mock::given(method("POST"))
                 .and(path("/token"))
                 .and(body_string_contains("grant_type=refresh_token"))
-                .and(body_string_contains("client_id=test_client_id"))
-                .and(body_string_contains("client_secret=test_client_secret"))
+                .and(body_string_contains(format!(
+                    "client_id={GOOGLE_OAUTH_CLIENT_ID}"
+                )))
                 .and(body_string_contains("refresh_token=test_refresh_token"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "access_token": "oauth_access_token",
@@ -1259,8 +1277,7 @@ comment: "Test comment"
             }];
 
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1333,8 +1350,7 @@ comment: "Test comment"
             }];
 
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1435,8 +1451,7 @@ comment: "Test comment"
             }];
 
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1485,7 +1500,6 @@ comment: "Test comment"
 
             let credentials = GoogleOAuthCredentials {
                 client_id: "invalid_client_id".to_string(),
-                client_secret: "invalid_client_secret".to_string(),
                 refresh_token: "invalid_refresh_token".to_string(),
             };
 
@@ -1521,8 +1535,7 @@ comment: "Test comment"
                 .await;
 
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "invalid_refresh_token".to_string(),
             };
 
@@ -1540,28 +1553,24 @@ comment: "Test comment"
         #[tokio::test]
         async fn test_oauth_credentials_structure() {
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
             // Test that credentials are properly stored
-            assert_eq!(credentials.client_id, "test_client_id");
-            assert_eq!(credentials.client_secret, "test_client_secret");
+            assert_eq!(credentials.client_id, GOOGLE_OAUTH_CLIENT_ID);
             assert_eq!(credentials.refresh_token, "test_refresh_token");
 
             // Test that the credentials can be cloned
             let cloned_credentials = credentials.clone();
             assert_eq!(cloned_credentials.client_id, credentials.client_id);
-            assert_eq!(cloned_credentials.client_secret, credentials.client_secret);
             assert_eq!(cloned_credentials.refresh_token, credentials.refresh_token);
         }
 
         #[tokio::test]
         async fn test_oauth_client_initialization() {
             let credentials = GoogleOAuthCredentials {
-                client_id: "test_client_id".to_string(),
-                client_secret: "test_client_secret".to_string(),
+                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
                 refresh_token: "test_refresh_token".to_string(),
             };
 
@@ -1569,10 +1578,6 @@ comment: "Test comment"
 
             // Test initial state
             assert_eq!(oauth_client.credentials.client_id, credentials.client_id);
-            assert_eq!(
-                oauth_client.credentials.client_secret,
-                credentials.client_secret
-            );
             assert_eq!(
                 oauth_client.credentials.refresh_token,
                 credentials.refresh_token
