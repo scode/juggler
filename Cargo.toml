@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "TODO juggler"
 authors = ["Peter Schuller <peter.schuller@infidyne.com>"]
 license = "MIT"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 crossterm = "0"

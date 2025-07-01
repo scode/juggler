@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use log::info;
 
 use crate::ui::Todo;
+use crate::auth::{GoogleOAuthConfig, refresh_access_token};
 
 /// The name of the Google Tasks list used for synchronization
 const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
@@ -220,6 +221,21 @@ async fn create_google_task(
     }
 
     Ok(())
+}
+
+/// Sync todos to Google Tasks using OAuth refresh token
+pub async fn sync_to_tasks_with_oauth(
+    todos: &mut [Todo],
+    oauth_config: &GoogleOAuthConfig,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    
+    // Refresh the access token
+    let token_response = refresh_access_token(&client, oauth_config).await?;
+    
+    // Use the refreshed access token for sync
+    sync_to_tasks_with_base_url(todos, &token_response.access_token, dry_run, "https://tasks.googleapis.com").await
 }
 
 pub async fn sync_to_tasks(
