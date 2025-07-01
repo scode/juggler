@@ -167,7 +167,6 @@ struct GoogleTaskList {
 struct OAuthTokenResponse {
     access_token: String,
     expires_in: Option<u64>,
-    token_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -326,17 +325,26 @@ pub async fn sync_to_tasks(
 
 pub async fn sync_to_tasks_with_oauth(
     todos: &mut [Todo],
-    mut oauth_client: GoogleOAuthClient,
+    oauth_client: GoogleOAuthClient,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let access_token = oauth_client.get_access_token().await?;
-    sync_to_tasks_with_base_url(
+    sync_to_tasks_with_oauth_and_base_url(
         todos,
-        &access_token,
+        oauth_client,
         dry_run,
         "https://tasks.googleapis.com",
     )
     .await
+}
+
+pub async fn sync_to_tasks_with_oauth_and_base_url(
+    todos: &mut [Todo],
+    mut oauth_client: GoogleOAuthClient,
+    dry_run: bool,
+    base_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let access_token = oauth_client.get_access_token().await?;
+    sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url).await
 }
 
 async fn sync_to_tasks_with_base_url(
@@ -1187,17 +1195,20 @@ comment: "Test comment"
         #[tokio::test]
         async fn test_sync_with_oauth_success() {
             let mock_server = MockServer::start().await;
+            let oauth_mock_server = MockServer::start().await;
 
             // Mock OAuth token endpoint
-            let token_server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path("/token"))
+                .and(body_string_contains("grant_type=refresh_token"))
+                .and(body_string_contains("client_id=test_client_id"))
+                .and(body_string_contains("client_secret=test_client_secret"))
+                .and(body_string_contains("refresh_token=test_refresh_token"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "access_token": "oauth_access_token",
-                    "expires_in": 3600,
-                    "token_type": "Bearer"
+                    "expires_in": 3600
                 })))
-                .mount(&token_server)
+                .mount(&oauth_mock_server)
                 .await;
 
             // Mock the task lists endpoint
@@ -1239,6 +1250,79 @@ comment: "Test comment"
 
             let mut todos = vec![Todo {
                 title: "OAuth Test Task".to_string(),
+                comment: Some("OAuth comment".to_string()),
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            }];
+
+            let credentials = GoogleOAuthCredentials {
+                client_id: "test_client_id".to_string(),
+                client_secret: "test_client_secret".to_string(),
+                refresh_token: "test_refresh_token".to_string(),
+            };
+
+            let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
+            let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+
+            let result = sync_to_tasks_with_oauth_and_base_url(
+                &mut todos,
+                oauth_client,
+                false,
+                &mock_server.uri(),
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(todos[0].google_task_id, Some("oauth_task_id".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_sync_with_oauth_dry_run() {
+            let mock_server = MockServer::start().await;
+            let oauth_mock_server = MockServer::start().await;
+
+            // Mock OAuth token endpoint
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "oauth_access_token_dry_run",
+                    "expires_in": 3600
+                })))
+                .mount(&oauth_mock_server)
+                .await;
+
+            // Mock the task lists endpoint
+            Mock::given(method("GET"))
+                .and(path("/tasks/v1/users/@me/lists"))
+                .and(bearer_token("oauth_access_token_dry_run"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "items": [
+                        {
+                            "id": "dry_run_list_id",
+                            "title": "juggler"
+                        }
+                    ]
+                })))
+                .mount(&mock_server)
+                .await;
+
+            // Mock the existing tasks endpoint (empty list)
+            Mock::given(method("GET"))
+                .and(path("/tasks/v1/lists/dry_run_list_id/tasks"))
+                .and(bearer_token("oauth_access_token_dry_run"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "items": []
+                })))
+                .mount(&mock_server)
+                .await;
+
+            // No POST/PUT/DELETE mocks because dry-run shouldn't make those calls
+
+            let mut todos = vec![Todo {
+                title: "Dry Run OAuth Test".to_string(),
                 comment: None,
                 expanded: false,
                 done: false,
@@ -1253,8 +1337,162 @@ comment: "Test comment"
                 refresh_token: "test_refresh_token".to_string(),
             };
 
-            // For the actual test, we'll need to create a test variant that allows custom URLs
-            // This test demonstrates the structure but won't pass due to hardcoded OAuth URL
+            let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
+            let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+
+            let result = sync_to_tasks_with_oauth_and_base_url(
+                &mut todos,
+                oauth_client,
+                true, // dry_run = true
+                &mock_server.uri(),
+            )
+            .await;
+
+            assert!(result.is_ok());
+            // In dry run mode, a fake ID should be assigned
+            assert!(todos[0].google_task_id.is_some());
+            assert!(todos[0]
+                .google_task_id
+                .as_ref()
+                .unwrap()
+                .starts_with("dry-run-id-"));
+        }
+
+        #[tokio::test]
+        async fn test_sync_with_oauth_update_existing_task() {
+            let mock_server = MockServer::start().await;
+            let oauth_mock_server = MockServer::start().await;
+
+            // Mock OAuth token endpoint
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "oauth_update_token",
+                    "expires_in": 3600
+                })))
+                .mount(&oauth_mock_server)
+                .await;
+
+            // Mock the task lists endpoint
+            Mock::given(method("GET"))
+                .and(path("/tasks/v1/users/@me/lists"))
+                .and(bearer_token("oauth_update_token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "items": [
+                        {
+                            "id": "update_list_id",
+                            "title": "juggler"
+                        }
+                    ]
+                })))
+                .mount(&mock_server)
+                .await;
+
+            // Mock the existing tasks endpoint with one task
+            Mock::given(method("GET"))
+                .and(path("/tasks/v1/lists/update_list_id/tasks"))
+                .and(bearer_token("oauth_update_token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "items": [
+                        {
+                            "id": "existing_oauth_task_id",
+                            "title": "j:Old OAuth Title",
+                            "notes": "Old comment",
+                            "status": "needsAction"
+                        }
+                    ]
+                })))
+                .mount(&mock_server)
+                .await;
+
+            // Mock the update task endpoint
+            Mock::given(method("PUT"))
+                .and(path("/tasks/v1/lists/update_list_id/tasks/existing_oauth_task_id"))
+                .and(bearer_token("oauth_update_token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "existing_oauth_task_id",
+                    "title": "j:Updated OAuth Title",
+                    "notes": "Updated comment",
+                    "status": "needsAction"
+                })))
+                .mount(&mock_server)
+                .await;
+
+            let mut todos = vec![Todo {
+                title: "Updated OAuth Title".to_string(),
+                comment: Some("Updated comment".to_string()),
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: Some("existing_oauth_task_id".to_string()),
+            }];
+
+            let credentials = GoogleOAuthCredentials {
+                client_id: "test_client_id".to_string(),
+                client_secret: "test_client_secret".to_string(),
+                refresh_token: "test_refresh_token".to_string(),
+            };
+
+            let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
+            let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+
+            let result = sync_to_tasks_with_oauth_and_base_url(
+                &mut todos,
+                oauth_client,
+                false,
+                &mock_server.uri(),
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(todos[0].google_task_id, Some("existing_oauth_task_id".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_sync_with_oauth_authentication_failure() {
+            let oauth_mock_server = MockServer::start().await;
+
+            // Mock OAuth token endpoint with failure
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                    "error": "invalid_grant",
+                    "error_description": "The provided authorization grant is invalid"
+                })))
+                .mount(&oauth_mock_server)
+                .await;
+
+            let mut todos = vec![Todo {
+                title: "OAuth Failure Test".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            }];
+
+            let credentials = GoogleOAuthCredentials {
+                client_id: "invalid_client_id".to_string(),
+                client_secret: "invalid_client_secret".to_string(),
+                refresh_token: "invalid_refresh_token".to_string(),
+            };
+
+            let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
+            let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+
+            let result = sync_to_tasks_with_oauth_and_base_url(
+                &mut todos,
+                oauth_client,
+                false,
+                "https://tasks.googleapis.com", // Won't be reached due to OAuth failure
+            )
+            .await;
+
+            assert!(result.is_err());
+            let error_msg = result.unwrap_err().to_string();
+            assert!(error_msg.contains("OAuth token refresh failed with status 401"));
         }
 
         #[tokio::test]
