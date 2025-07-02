@@ -13,9 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **CLI Commands:**
 
 *OAuth Refresh Token Authentication (Recommended):*
-- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>` - Sync with Google Tasks using OAuth
-- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> --dry-run` - Test sync without changes
-- `RUST_LOG=info cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>` - Sync with logging
+- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>` - Sync with Google Tasks using OAuth
+- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --dry-run` - Test sync without changes
+- `RUST_LOG=info cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>` - Sync with logging
+
+*Browser OAuth Login (Recommended for first-time setup):*
+- `cargo run -- login` - Interactive browser-based OAuth authentication
+- `cargo run -- login --port 8080` - OAuth login with custom callback port
 
 *Legacy Bearer Token Authentication (Deprecated):*
 - `cargo run -- sync google-tasks --token <TOKEN>` - Sync with Google Tasks using bearer token (deprecated)
@@ -31,27 +35,34 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 ### Core Modules
 
 - **main.rs**: Entry point with Clap CLI handling, async runtime setup, and mode routing (TUI vs CLI)
-- **store.rs**: Data persistence layer with YAML serialization, external editor integration, and Google Tasks API sync
+- **store.rs**: Data persistence layer with YAML serialization, external editor integration, and TODO data structures
 - **ui.rs**: TUI implementation with App struct, event handling, rendering logic, and keyboard shortcuts
+- **google_tasks.rs**: Google Tasks API integration with OAuth client, sync operations, and task mapping
+- **oauth.rs**: OAuth 2.0 PKCE flow implementation with local HTTP server for browser authentication
+- **config.rs**: Application constants including API URLs, OAuth client ID, and default settings
 
 ### Architectural Patterns
 
-- **Dual-mode operation**: TUI mode (default) vs CLI mode (sync commands)
-- **Async runtime**: Uses Tokio for Google Tasks API operations
-- **Modular design**: Clear separation between UI, storage, and main coordination
-- **Event-driven TUI**: Crossterm for input handling with ListState navigation
-- **External integrations**: Editor integration via trait abstraction and Google Tasks API sync
-- **Logging**: env_logger for sync operation visibility
+- **Dual-mode operation**: TUI mode (default) vs CLI mode (sync/login commands)
+- **Async runtime**: Uses Tokio for Google Tasks API operations and OAuth flows
+- **Modular design**: Clear separation between UI, storage, API integration, and main coordination
+- **Event-driven TUI**: Crossterm for input handling with ListState navigation and dual-section layout (pending/done)
+- **External integrations**: Editor integration via trait abstraction, Google Tasks API sync, and OAuth browser flow
+- **Logging**: env_logger for sync operation visibility with configurable levels
+- **Trait-based architecture**: TodoEditor trait allows for different editing backends (external editor, potential future UI editor)
 
 ### Google Tasks Integration
 
 - **One-way sync**: Local YAML is authoritative, changes push to Google Tasks
 - **Authentication**: OAuth refresh token (recommended) or bearer token (deprecated)
-- **Token management**: Automatic access token refresh with 5-minute buffer
+- **OAuth flow**: PKCE-based browser authentication with local HTTP server callback
+- **Token management**: Automatic access token refresh with 5-minute buffer and caching
 - **API operations**: Create, update, delete tasks via Google Tasks REST API
 - **Dry-run mode**: Preview changes without execution
-- **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list
+- **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list with "j:" prefix
 - **ID tracking**: `google_task_id` field links local items to remote tasks
+- **Built-in OAuth client**: Uses hardcoded public client ID for seamless authentication
+- **Environment variables**: Optional `JUGGLER_CLIENT_SECRET` for enhanced security
 
 ## Data Format
 
@@ -69,12 +80,36 @@ The application reads from `TODOs.yaml` in the project root on startup and autom
 ## Key Constants and Configuration
 
 - `GOOGLE_TASKS_LIST_NAME`: Set to "juggler" - the Google Tasks list name for sync operations
-- TUI keyboard shortcuts defined in `ui.rs` constants (j/k navigation, o expand, x select, etc.)
+- `GOOGLE_OAUTH_CLIENT_ID`: Hardcoded public OAuth client ID for browser authentication
+- TUI keyboard shortcuts defined in `ui.rs` constants:
+  - `j/k` - Navigate up/down between items
+  - `o` - Toggle expand/collapse item (show/hide comments)
+  - `x` - Toggle select/deselect item for bulk operations
+  - `e` - Toggle done status for selected items or current item
+  - `E` - Edit current item in external editor
+  - `s/S` - Snooze items by 1 day/1 week
+  - `q` - Quit and save
 - External editor uses `$EDITOR` environment variable, defaults to "emacs"
+- Default file: `TODOs.yaml` in project root
 
 ## Testing Considerations
 
 - Tests use isolated temporary files to avoid interference
 - Store tests validate YAML roundtrip serialization and loading
-- UI tests verify keyboard interactions and display formatting
-- Sync operations are not directly tested (require valid Google API tokens)
+- UI tests verify keyboard interactions, display formatting, and state management
+- Google Tasks sync operations use wiremock for HTTP mocking without requiring real API tokens
+- OAuth client tests verify token refresh, caching, and error handling
+- Comprehensive test coverage for both OAuth and legacy bearer token authentication paths
+- Tests validate dry-run mode functionality and logging behavior
+
+## Key Dependencies
+
+- **ratatui**: Modern terminal UI framework for the TUI interface
+- **crossterm**: Cross-platform terminal manipulation for input handling
+- **reqwest**: HTTP client for Google Tasks API interactions
+- **tokio**: Async runtime for API operations and OAuth flows
+- **serde/serde_yaml**: Serialization for YAML data persistence
+- **chrono**: Date/time handling for due dates and relative time display
+- **clap**: Command-line argument parsing
+- **hyper**: HTTP server for OAuth callback handling
+- **wiremock**: HTTP mocking for comprehensive API testing
