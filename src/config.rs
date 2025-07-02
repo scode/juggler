@@ -1,0 +1,16 @@
+pub const GOOGLE_OAUTH_CLIENT_ID: &str =
+    "427291927957-ahaf2g5gp42oo70chpt3c189d6i7bhl8.apps.googleusercontent.com";
+
+pub const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
+
+pub const GOOGLE_OAUTH_AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
+pub const GOOGLE_TASKS_SCOPE: &str = "https://www.googleapis.com/auth/tasks";
+
+pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+
+pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
+
+pub const DEFAULT_TODOS_FILE: &str = "TODOs.yaml";
+
+pub const DEFAULT_EDITOR: &str = "emacs";
