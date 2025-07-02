@@ -5,10 +5,14 @@ use tempfile::NamedTempFile;
 use chrono::{DateTime, Utc};
 use log::info;
 
+#[cfg(test)]
+use crate::config::DEFAULT_TODOS_FILE;
+use crate::config::{
+    DEFAULT_EDITOR, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME,
+};
 use crate::ui::Todo;
 
-/// The name of the Google Tasks list used for synchronization
-const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
+/// Configuration constants are centralized in the `config` module
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct TodoItem {
@@ -60,8 +64,8 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     // Get the path to the temp file
     let temp_path = temp_file.path();
 
-    // Get editor from environment or default to emacs
-    let editor = env::var("EDITOR").unwrap_or_else(|_| "emacs".to_string());
+    // Get editor from environment or default to configured value
+    let editor = env::var("EDITOR").unwrap_or_else(|_| DEFAULT_EDITOR.to_string());
 
     // Launch editor
     let status = Command::new(&editor).arg(temp_path).status()?;
@@ -190,7 +194,7 @@ impl GoogleOAuthClient {
             client: reqwest::Client::new(),
             cached_access_token: None,
             token_expires_at: None,
-            oauth_token_url: "https://oauth2.googleapis.com/token".to_string(),
+            oauth_token_url: GOOGLE_OAUTH_TOKEN_URL.to_string(),
         }
     }
 
@@ -334,7 +338,7 @@ pub async fn sync_to_tasks(
     access_token: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    sync_to_tasks_with_base_url(todos, access_token, dry_run, "https://tasks.googleapis.com").await
+    sync_to_tasks_with_base_url(todos, access_token, dry_run, GOOGLE_TASKS_BASE_URL).await
 }
 
 pub async fn sync_to_tasks_with_oauth(
@@ -342,13 +346,7 @@ pub async fn sync_to_tasks_with_oauth(
     oauth_client: GoogleOAuthClient,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    sync_to_tasks_with_oauth_and_base_url(
-        todos,
-        oauth_client,
-        dry_run,
-        "https://tasks.googleapis.com",
-    )
-    .await
+    sync_to_tasks_with_oauth_and_base_url(todos, oauth_client, dry_run, GOOGLE_TASKS_BASE_URL).await
 }
 
 pub async fn sync_to_tasks_with_oauth_and_base_url(
@@ -570,7 +568,7 @@ mod tests {
 
     #[test]
     fn load_todos_parses_comments() {
-        let todos = load_todos("TODOs.yaml").expect("load TODOs");
+        let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
         // After sorting, Item 1 is now at index 3 (2031 due date)
         assert_eq!(todos[3].title, "Item 1");
@@ -582,7 +580,7 @@ mod tests {
 
     #[test]
     fn load_todos_handles_done_field() {
-        let todos = load_todos("TODOs.yaml").expect("load TODOs");
+        let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
         // First four items should default to not done
@@ -1511,7 +1509,7 @@ comment: "Test comment"
                 &mut todos,
                 oauth_client,
                 false,
-                "https://tasks.googleapis.com", // Won't be reached due to OAuth failure
+                GOOGLE_TASKS_BASE_URL, // Won't be reached due to OAuth failure
             )
             .await;
 
@@ -1584,10 +1582,7 @@ comment: "Test comment"
             );
             assert!(oauth_client.cached_access_token.is_none());
             assert!(oauth_client.token_expires_at.is_none());
-            assert_eq!(
-                oauth_client.oauth_token_url,
-                "https://oauth2.googleapis.com/token"
-            );
+            assert_eq!(oauth_client.oauth_token_url, GOOGLE_OAUTH_TOKEN_URL);
         }
     }
 }

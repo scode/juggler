@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use crate::config::{GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -230,13 +231,13 @@ async fn handle_callback(
 }
 
 fn build_auth_url(client_id: &str, redirect_uri: &str, code_challenge: &str) -> String {
-    let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
+    let mut url = Url::parse(GOOGLE_OAUTH_AUTHORIZE_URL).unwrap();
 
     url.query_pairs_mut()
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("response_type", "code")
-        .append_pair("scope", "https://www.googleapis.com/auth/tasks")
+        .append_pair("scope", GOOGLE_TASKS_SCOPE)
         .append_pair("access_type", "offline")
         .append_pair("prompt", "consent")
         .append_pair("code_challenge", code_challenge)
@@ -289,7 +290,7 @@ async fn exchange_code_for_tokens(
     }
 
     let response = client
-        .post("https://oauth2.googleapis.com/token")
+        .post(GOOGLE_OAUTH_TOKEN_URL)
         .form(&params)
         .send()
         .await?;

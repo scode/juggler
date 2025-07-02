@@ -4,21 +4,19 @@ use std::io;
 
 use log::{error, info};
 
+mod config;
 mod oauth;
 mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
+use config::{DEFAULT_TODOS_FILE, GOOGLE_OAUTH_CLIENT_ID};
 use oauth::run_oauth_flow;
 use store::{
     GoogleOAuthClient, GoogleOAuthCredentials, load_todos, store_todos, sync_to_tasks,
     sync_to_tasks_with_oauth,
 };
 use ui::{App, ExternalEditor};
-
-/// Google OAuth client ID for the juggler application
-const GOOGLE_OAUTH_CLIENT_ID: &str =
-    "427291927957-ahaf2g5gp42oo70chpt3c189d6i7bhl8.apps.googleusercontent.com";
 
 #[derive(Parser)]
 #[command(name = "juggler")]
@@ -62,7 +60,7 @@ async fn main() -> io::Result<()> {
     builder.filter(None, LevelFilter::Info).init();
 
     let cli = Cli::parse();
-    let todos_file = "TODOs.yaml";
+    let todos_file = DEFAULT_TODOS_FILE;
 
     match cli.command {
         Some(Commands::Login { port }) => {
