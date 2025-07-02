@@ -4,16 +4,17 @@ use std::io;
 
 use log::{error, info};
 
+mod google_tasks;
 mod oauth;
 mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use oauth::run_oauth_flow;
-use store::{
-    GoogleOAuthClient, GoogleOAuthCredentials, load_todos, store_todos, sync_to_tasks,
-    sync_to_tasks_with_oauth,
+use google_tasks::{
+    GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks, sync_to_tasks_with_oauth,
 };
+use oauth::run_oauth_flow;
+use store::{load_todos, store_todos};
 use ui::{App, ExternalEditor};
 
 /// Google OAuth client ID for the juggler application
