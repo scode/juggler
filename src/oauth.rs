@@ -322,22 +322,6 @@ fn generate_code_challenge(code_verifier: &str) -> String {
 }
 
 fn open_browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(url).spawn()?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(url).spawn()?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(&["/c", "start", url])
-            .spawn()?;
-    }
-
+    open::that(url)?;
     Ok(())
 }
