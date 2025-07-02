@@ -27,6 +27,7 @@ http-body-util = "0.1"
 base64 = "0.22"
 sha2 = "0.10"
 rand = "0.8"
+open = "5"
 
 [dev-dependencies]
 wiremock = "0.6"
