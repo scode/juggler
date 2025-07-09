@@ -145,12 +145,12 @@ mod tests {
     fn load_todos_parses_comments() {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
-        // After sorting, Item 1 is now at index 3 (2031 due date)
-        assert_eq!(todos[3].title, "Item 1");
-        let comment = todos[3].comment.as_deref().expect("comment for Item 1");
+        // After sorting, Item 1 is now at index 4 (2031 due date)
+        assert_eq!(todos[4].title, "Item 1");
+        let comment = todos[4].comment.as_deref().expect("comment for Item 1");
         assert!(comment.starts_with("This is a comment for item 1."));
         assert!(comment.contains("It can span multiple lines."));
-        assert!(!todos[3].expanded);
+        assert!(!todos[4].expanded);
     }
 
     #[test]
@@ -158,18 +158,18 @@ mod tests {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
-        // First four items should default to not done
+        // First five items should default to not done
         assert!(!todos[0].done);
         assert!(!todos[1].done);
         assert!(!todos[2].done);
         assert!(!todos[3].done);
+        assert!(!todos[4].done);
 
-        // Fifth item should be marked as done
-        assert!(todos[4].done);
-        assert_eq!(todos[4].title, "Completed task example");
+        // Sixth item should be marked as done
+        assert!(todos[5].done);
+        assert_eq!(todos[5].title, "Completed task example");
 
-        // Sixth item should default to not done
-        assert!(!todos[5].done);
+        // This item is the completed one and is checked above
     }
 
     #[test]
