@@ -28,8 +28,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str =
-    "o - open, j/k - nav, x - select, e - done, E - edit, s - snooze 1d, S - snooze 7d, q - quit";
+pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - snooze 7d, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -40,6 +39,7 @@ pub const KEY_EDIT: KeyCode = KeyCode::Char('E');
 pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
 pub const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
+pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
 
 #[derive(Debug, Clone)]
 pub struct Todo {
@@ -324,10 +324,16 @@ impl<T: TodoEditor> App<T> {
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                if key_event.code == KEY_EDIT && self.editor.needs_terminal_restoration() {
+                if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
+                    && self.editor.needs_terminal_restoration()
+                {
                     // Special handling for external editor - restore and reinitialize terminal
                     ratatui::restore();
-                    self.edit_item();
+                    if key_event.code == KEY_EDIT {
+                        self.edit_item();
+                    } else {
+                        self.create_new_item();
+                    }
                     *terminal = ratatui::init();
                 } else {
                     self.handle_key_event_internal(key_event);
@@ -350,6 +356,7 @@ impl<T: TodoEditor> App<T> {
             KEY_TOGGLE_SELECT => self.toggle_select(),
             KEY_SNOOZE_DAY => self.snooze_day(),
             KEY_SNOOZE_WEEK => self.snooze_week(),
+            KEY_CREATE => self.create_new_item(),
             _ => {}
         }
     }
@@ -564,6 +571,75 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
+    fn create_new_item(&mut self) {
+        // Create a new Todo with default values
+        let new_todo = Todo {
+            title: String::new(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+
+        let result = self.editor.edit_todo(&new_todo);
+
+        match result {
+            Ok(created_item) => {
+                // Only add the item if it has a non-empty title
+                if !created_item.title.trim().is_empty() {
+                    let is_done = created_item.done;
+                    self.items.push(created_item);
+                    // Update pending count
+                    self.pending_count = self.items.iter().filter(|item| !item.done).count();
+
+                    // Move cursor to the newly created item
+                    if !self.items.is_empty() {
+                        // If the new item is not done, it will be in the pending section
+                        if !is_done {
+                            self.current_section = Section::Pending;
+                            // Find the position of the new item in the pending items
+                            let pending_items: Vec<_> = self
+                                .items
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, item)| !item.done)
+                                .collect();
+                            let new_item_idx = self.items.len() - 1;
+                            if let Some(pos) = pending_items
+                                .iter()
+                                .position(|(idx, _)| *idx == new_item_idx)
+                            {
+                                self.pending_index = pos;
+                            }
+                        } else {
+                            // If the new item is done, it will be in the done section
+                            self.current_section = Section::Done;
+                            // Find the position of the new item in the done items
+                            let done_items: Vec<_> = self
+                                .items
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, item)| item.done)
+                                .collect();
+                            let new_item_idx = self.items.len() - 1;
+                            if let Some(pos) =
+                                done_items.iter().position(|(idx, _)| *idx == new_item_idx)
+                            {
+                                self.done_index = pos;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Editor failed or was cancelled - do nothing
+                // In a more sophisticated app, we might show an error message
+            }
+        }
+    }
+
     fn exit(&mut self) {
         self.exit = true;
     }
@@ -676,6 +752,27 @@ mod tests {
         fn edit_todo(&self, todo: &Todo) -> io::Result<Todo> {
             // Return the todo unchanged
             Ok(todo.clone())
+        }
+
+        fn needs_terminal_restoration(&self) -> bool {
+            false
+        }
+    }
+
+    // Test-only editor that returns a specific todo item
+    struct MockEditor {
+        return_todo: Todo,
+    }
+
+    impl MockEditor {
+        fn new(return_todo: Todo) -> Self {
+            MockEditor { return_todo }
+        }
+    }
+
+    impl TodoEditor for MockEditor {
+        fn edit_todo(&self, _todo: &Todo) -> io::Result<Todo> {
+            Ok(self.return_todo.clone())
         }
 
         fn needs_terminal_restoration(&self) -> bool {
@@ -1155,5 +1252,166 @@ mod tests {
         assert!(!app.items[1].selected);
         assert!(!app.items[2].selected);
         assert!(!app.items[3].selected); // Wasn't selected to begin with
+    }
+
+    #[test]
+    fn create_new_item_adds_valid_todo() {
+        let initial_items = vec![Todo {
+            title: String::from("existing task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        let new_todo = Todo {
+            title: String::from("new task"),
+            comment: Some(String::from("new comment")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(Utc::now()),
+            google_task_id: None,
+        };
+
+        let mock_editor = MockEditor::new(new_todo.clone());
+        let mut app = App::new(initial_items, mock_editor);
+
+        // Verify initial state
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.pending_count, 1);
+        assert_eq!(app.current_section, Section::Pending);
+        assert_eq!(app.pending_index, 0);
+
+        // Create new item
+        app.create_new_item();
+
+        // Verify new item was added
+        assert_eq!(app.items.len(), 2);
+        assert_eq!(app.items[1].title, "new task");
+        assert_eq!(app.items[1].comment, Some(String::from("new comment")));
+        assert!(!app.items[1].done);
+        assert_eq!(app.pending_count, 2);
+
+        // Verify cursor moved to new item
+        assert_eq!(app.current_section, Section::Pending);
+        assert_eq!(app.pending_index, 1);
+    }
+
+    #[test]
+    fn create_new_item_rejects_empty_title() {
+        let initial_items = vec![Todo {
+            title: String::from("existing task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        let empty_todo = Todo {
+            title: String::from("   "), // Only whitespace
+            comment: Some(String::from("comment")),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+
+        let mock_editor = MockEditor::new(empty_todo);
+        let mut app = App::new(initial_items, mock_editor);
+
+        // Verify initial state
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.pending_count, 1);
+
+        // Attempt to create new item with empty title
+        app.create_new_item();
+
+        // Verify item was not added
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.pending_count, 1);
+        assert_eq!(app.items[0].title, "existing task");
+    }
+
+    #[test]
+    fn create_new_item_handles_done_todo() {
+        let initial_items = vec![Todo {
+            title: String::from("existing task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        let done_todo = Todo {
+            title: String::from("completed task"),
+            comment: None,
+            expanded: false,
+            done: true,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+
+        let mock_editor = MockEditor::new(done_todo);
+        let mut app = App::new(initial_items, mock_editor);
+
+        // Verify initial state
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.pending_count, 1);
+        assert_eq!(app.current_section, Section::Pending);
+
+        // Create new done item
+        app.create_new_item();
+
+        // Verify new item was added
+        assert_eq!(app.items.len(), 2);
+        assert_eq!(app.items[1].title, "completed task");
+        assert!(app.items[1].done);
+        assert_eq!(app.pending_count, 1); // Still only 1 pending item
+
+        // Verify cursor moved to done section
+        assert_eq!(app.current_section, Section::Done);
+        assert_eq!(app.done_index, 0);
+    }
+
+    #[test]
+    fn create_new_item_in_empty_list() {
+        let new_todo = Todo {
+            title: String::from("first task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+
+        let mock_editor = MockEditor::new(new_todo);
+        let mut app = App::new(Vec::new(), mock_editor);
+
+        // Verify initial state
+        assert_eq!(app.items.len(), 0);
+        assert_eq!(app.pending_count, 0);
+
+        // Create new item
+        app.create_new_item();
+
+        // Verify new item was added
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].title, "first task");
+        assert!(!app.items[0].done);
+        assert_eq!(app.pending_count, 1);
+
+        // Verify cursor positioned correctly
+        assert_eq!(app.current_section, Section::Pending);
+        assert_eq!(app.pending_index, 0);
     }
 }
