@@ -11,7 +11,7 @@ mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use config::{DEFAULT_TODOS_FILE, GOOGLE_OAUTH_CLIENT_ID};
+use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
 use google_tasks::{
     GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks, sync_to_tasks_with_oauth,
 };
@@ -61,7 +61,7 @@ async fn main() -> io::Result<()> {
     builder.filter(None, LevelFilter::Info).init();
 
     let cli = Cli::parse();
-    let todos_file = DEFAULT_TODOS_FILE;
+    let todos_file = get_todos_file_path()?;
 
     match cli.command {
         Some(Commands::Login { port }) => {
@@ -104,7 +104,7 @@ async fn main() -> io::Result<()> {
                     refresh_token,
                     dry_run,
                 } => {
-                    let mut todos = load_todos(todos_file)?;
+                    let mut todos = load_todos(&todos_file)?;
 
                     info!("Syncing TODOs with Google Tasks...");
 
@@ -145,7 +145,7 @@ async fn main() -> io::Result<()> {
                     }
 
                     // Save the updated todos with new google_task_ids
-                    if let Err(e) = store_todos(&todos, todos_file) {
+                    if let Err(e) = store_todos(&todos, &todos_file) {
                         error!("Warning: Failed to save todos after sync: {e}");
                         return Err(e);
                     }
@@ -157,13 +157,13 @@ async fn main() -> io::Result<()> {
         None => {
             // TUI mode: original behavior
             let mut terminal = ratatui::init();
-            let items = load_todos(todos_file)?;
+            let items = load_todos(&todos_file)?;
             let mut app = App::new(items, ExternalEditor);
             let app_result = app.run(&mut terminal);
             ratatui::restore();
 
             // Save todos when exiting
-            if let Err(e) = store_todos(app.items(), todos_file) {
+            if let Err(e) = store_todos(app.items(), &todos_file) {
                 error!("Warning: Failed to save todos: {e}");
             }
 

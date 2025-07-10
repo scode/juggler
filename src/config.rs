@@ -11,6 +11,22 @@ pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
 pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
 
+#[cfg(test)]
 pub const DEFAULT_TODOS_FILE: &str = "TODOs.yaml";
+
+pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
+    dirs::home_dir()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Unable to find home directory",
+            )
+        })
+        .map(|home| home.join(".juggler"))
+}
+
+pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
+    get_juggler_dir().map(|dir| dir.join("TODOs.yaml"))
+}
 
 pub const DEFAULT_EDITOR: &str = "emacs";
