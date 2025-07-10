@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{env, fs, io, io::Write, process::Command};
 
 use tempfile::NamedTempFile;
@@ -93,6 +95,25 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
 pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> io::Result<()> {
     let file_path = file_path.as_ref();
 
+    // Ensure the directory exists with restricted permissions
+    if let Some(parent) = file_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+            // Set directory permissions to owner-only (0o700) on Unix systems
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(parent)?.permissions();
+                perms.set_mode(0o700);
+                fs::set_permissions(parent, perms)?;
+            }
+        }
+    }
+
+    // Archive existing file if it exists
+    if file_path.exists() {
+        archive_todos_file(file_path)?;
+    }
+
     // Convert Todo items to TodoItem for serialization
     let todo_items: Vec<TodoItem> = todos
         .iter()
@@ -134,6 +155,23 @@ pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> i
     // Atomically replace the original file
     fs::rename(temp_path, file_path)?;
 
+    Ok(())
+}
+
+fn archive_todos_file(file_path: &std::path::Path) -> io::Result<()> {
+    let parent = file_path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "File path has no parent directory",
+        )
+    })?;
+
+    let now = Utc::now();
+    let timestamp_str = now.format("%Y-%m-%dT%H-%M-%S").to_string();
+    let archive_name = format!("TODOs_{timestamp_str}.yaml");
+    let archive_path = parent.join(archive_name);
+
+    fs::copy(file_path, archive_path)?;
     Ok(())
 }
 
@@ -263,6 +301,85 @@ comment: "Test comment"
         assert_eq!(loaded_todo2.comment, None);
         assert!(loaded_todo2.done);
         assert!(loaded_todo2.due_date.is_some());
+    }
+
+    #[test]
+    fn store_todos_creates_archive() {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let test_file = temp_dir.path().join("test_todos.yaml");
+
+        // Create initial todos
+        let initial_todos = vec![Todo {
+            title: "Initial todo".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        // Store the initial todos
+        store_todos(&initial_todos, &test_file).expect("store initial todos");
+
+        // Verify the file was created
+        assert!(test_file.exists());
+
+        // Create updated todos
+        let updated_todos = vec![Todo {
+            title: "Updated todo".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        // Store the updated todos (should create archive)
+        store_todos(&updated_todos, &test_file).expect("store updated todos");
+
+        // Verify the updated file exists
+        assert!(test_file.exists());
+
+        // Verify an archive file was created
+        let archive_files: Vec<_> = fs::read_dir(temp_dir.path())
+            .expect("read temp dir")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("TODOs_")
+                    && name.ends_with(".yaml")
+                    && name != "test_todos.yaml"
+                {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            archive_files.len(),
+            1,
+            "Should have created exactly one archive file"
+        );
+        assert!(archive_files[0].starts_with("TODOs_"));
+        assert!(archive_files[0].ends_with(".yaml"));
+
+        // Verify the archive contains the initial content
+        let archive_path = temp_dir.path().join(&archive_files[0]);
+        let archived_todos = load_todos(&archive_path).expect("load archived todos");
+        assert_eq!(archived_todos.len(), 1);
+        assert_eq!(archived_todos[0].title, "Initial todo");
+
+        // Verify the current file contains the updated content
+        let current_todos = load_todos(&test_file).expect("load current todos");
+        assert_eq!(current_todos.len(), 1);
+        assert_eq!(current_todos[0].title, "Updated todo");
     }
 
     #[test]

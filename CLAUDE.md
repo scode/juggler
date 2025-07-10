@@ -35,11 +35,11 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 ### Core Modules
 
 - **main.rs**: Entry point with Clap CLI handling, async runtime setup, and mode routing (TUI vs CLI)
-- **store.rs**: Data persistence layer with YAML serialization, external editor integration, and TODO data structures
+- **store.rs**: Data persistence layer with YAML serialization, external editor integration, TODO data structures, and archiving functionality
 - **ui.rs**: TUI implementation with App struct, event handling, rendering logic, and keyboard shortcuts
 - **google_tasks.rs**: Google Tasks API integration with OAuth client, sync operations, and task mapping
 - **oauth.rs**: OAuth 2.0 PKCE flow implementation with local HTTP server for browser authentication
-- **config.rs**: Application constants including API URLs, OAuth client ID, and default settings
+- **config.rs**: Application constants including API URLs, OAuth client ID, and file path management functions
 
 ### Architectural Patterns
 
@@ -64,7 +64,7 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **Built-in OAuth client**: Uses hardcoded public client ID for seamless authentication
 - **Environment variables**: Optional `JUGGLER_CLIENT_SECRET` for enhanced security
 
-## Data Format
+## Data Format and Storage
 
 TODO items are stored in YAML format with enhanced structure:
 ```yaml
@@ -75,7 +75,15 @@ TODO items are stored in YAML format with enhanced structure:
   google_task_id: "task_abc123"     # Set after Google Tasks sync
 ```
 
-The application reads from `TODOs.yaml` in the project root on startup and automatically saves changes on exit. Items are sorted by due date with overdue items visually highlighted.
+### File Storage Architecture
+
+- **Primary file**: `~/.juggler/TODOs.yaml` - main TODO storage
+- **Directory creation**: `~/.juggler` directory created automatically with secure permissions (owner-only on Unix)
+- **Archiving system**: Before each update, existing `TODOs.yaml` is copied to `TODOs_YYYY-MM-DDTHH-MM-SS.yaml`
+- **Atomic updates**: Uses temporary files and atomic rename to prevent data corruption
+- **Platform compatibility**: Permission setting is conditional (Unix only, skipped on Windows)
+
+The application reads from `~/.juggler/TODOs.yaml` on startup and automatically saves changes on exit. Items are sorted by due date with overdue items visually highlighted.
 
 ## Key Constants and Configuration
 
@@ -90,17 +98,18 @@ The application reads from `TODOs.yaml` in the project root on startup and autom
   - `s/S` - Snooze items by 1 day/1 week
   - `q` - Quit and save
 - External editor uses `$EDITOR` environment variable, defaults to "emacs"
-- Default file: `TODOs.yaml` in project root
+- TODO storage: `~/.juggler/TODOs.yaml` with automatic archiving to timestamped backups
 
 ## Testing Considerations
 
 - Tests use isolated temporary files to avoid interference
-- Store tests validate YAML roundtrip serialization and loading
+- Store tests validate YAML roundtrip serialization, loading, and archiving functionality
 - UI tests verify keyboard interactions, display formatting, and state management
 - Google Tasks sync operations use wiremock for HTTP mocking without requiring real API tokens
 - OAuth client tests verify token refresh, caching, and error handling
 - Comprehensive test coverage for both OAuth and legacy bearer token authentication paths
 - Tests validate dry-run mode functionality and logging behavior
+- Archive tests verify timestamped backup creation and content preservation
 
 ## Key Dependencies
 
@@ -113,3 +122,5 @@ The application reads from `TODOs.yaml` in the project root on startup and autom
 - **clap**: Command-line argument parsing
 - **hyper**: HTTP server for OAuth callback handling
 - **wiremock**: HTTP mocking for comprehensive API testing
+- **dirs**: Cross-platform home directory detection
+- **tempfile**: Secure temporary file handling for atomic operations
