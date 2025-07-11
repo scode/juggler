@@ -11,7 +11,7 @@ mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
+use config::{DEFAULT_TODOS_FILE, GOOGLE_OAUTH_CLIENT_ID, get_juggler_dir};
 use google_tasks::{
     GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks, sync_to_tasks_with_oauth,
 };
@@ -23,6 +23,9 @@ use ui::{App, ExternalEditor};
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
 struct Cli {
+    /// Directory containing TODO files (defaults to ~/.juggler)
+    #[arg(long, value_name = "DIR", help = "Custom directory for TODO files")]
+    todo_dir: Option<std::path::PathBuf>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -61,7 +64,11 @@ async fn main() -> io::Result<()> {
     builder.filter(None, LevelFilter::Info).init();
 
     let cli = Cli::parse();
-    let todos_file = get_todos_file_path()?;
+    let todo_dir = match &cli.todo_dir {
+        Some(dir) => dir.clone(),
+        None => get_juggler_dir()?,
+    };
+    let todos_file = todo_dir.join(DEFAULT_TODOS_FILE);
 
     match cli.command {
         Some(Commands::Login { port }) => {

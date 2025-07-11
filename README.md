@@ -34,6 +34,9 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
    ```bash
    ./target/release/juggler sync google-tasks \
      --refresh-token "YOUR_REFRESH_TOKEN"
+   # with a custom TODO directory
+   juggler --todo-dir my_tasks_dir sync google-tasks \
+     --refresh-token "YOUR_REFRESH_TOKEN"
    ```
 
 ## Installation
@@ -52,6 +55,8 @@ Launch the interactive TUI (default behavior):
 cargo run
 # or
 ./target/release/juggler
+# or with a custom TODO directory
+juggler --todo-dir my_tasks_dir
 ```
 
 **Keyboard Shortcuts:**
@@ -86,6 +91,9 @@ juggler sync google-tasks --help
 - `--refresh-token <REFRESH_TOKEN>`: OAuth refresh token (recommended)
 - `--token <TOKEN>`: OAuth access token (deprecated, expires quickly)
 - `--dry-run`: Log actions without executing them (safe testing mode)
+
+**Common options:**
+- `--todo-dir <DIR>`: Use a custom directory for TODO files
 
 ## Google Tasks Synchronization
 
