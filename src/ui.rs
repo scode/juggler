@@ -2,14 +2,14 @@ use std::io;
 
 use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+#[cfg(test)]
+use ratatui::style::Color;
 use ratatui::{
     DefaultTerminal, Frame,
     style::{Modifier, Style},
     text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
-#[cfg(test)]
-use ratatui::style::Color;
 
 use crate::store::{TodoItem, edit_todo_item};
 
@@ -308,7 +308,10 @@ impl<T: TodoEditor> App<T> {
         spans.push(Span::raw(format!("{checkbox} ")));
 
         if is_selected {
-            spans.push(Span::styled(&todo.title, Style::default().add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(
+                &todo.title,
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
         } else {
             spans.push(Span::raw(&todo.title));
         }
