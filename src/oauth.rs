@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 use url::Url;
 
 // Type alias to simplify complex type
-type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>>;
+type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>;
 
 // Note: Users must provide their own OAuth credentials from Google Cloud Console
 // This is required for security and compliance with Google's OAuth policies
@@ -254,9 +254,7 @@ async fn exchange_code_for_tokens(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    let use_secret = !GOOGLE_OAUTH_CLIENT_SECRET.is_empty();
-
-    let params = if use_secret {
+    let params = if let Some(secret) = GOOGLE_OAUTH_CLIENT_SECRET {
         info!("Using embedded client_secret for token exchange (desktop/native client)");
         vec![
             ("client_id", client_id),
@@ -264,7 +262,7 @@ async fn exchange_code_for_tokens(
             ("grant_type", "authorization_code"),
             ("redirect_uri", redirect_uri),
             ("code_verifier", code_verifier),
-            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
+            ("client_secret", secret),
         ]
     } else {
         info!("No client_secret configured - using PKCE public client flow");
@@ -284,7 +282,7 @@ async fn exchange_code_for_tokens(
     info!("  redirect_uri: {redirect_uri}");
     info!("  code_verifier: [PRESENT - {} chars]", code_verifier.len());
     info!("  code: [PRESENT - {} chars]", auth_code.len());
-    if use_secret {
+    if GOOGLE_OAUTH_CLIENT_SECRET.is_some() {
         info!("  client_secret: [PRESENT - embedded]");
     }
 

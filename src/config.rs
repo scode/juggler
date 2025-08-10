@@ -15,9 +15,9 @@ pub const GOOGLE_OAUTH_CLIENT_ID: &str =
 ///   is mitigated by user consent and PKCE. Security relies on the user approving scopes for their
 ///   Google account, not on the secrecy of this string.
 ///
-/// If a concrete secret has been issued for this client id, set it here. Leaving it empty will fall
-/// back to the PKCE public client flow without sending a client_secret.
-pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "";
+/// Set to Some("...secret...") to include it in token exchanges; set to None to fall back to the
+/// PKCE public client flow without sending a client_secret.
+pub const GOOGLE_OAUTH_CLIENT_SECRET: Option<&str> = None;
 
 pub const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
 
