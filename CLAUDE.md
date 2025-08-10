@@ -62,7 +62,7 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list with "j:" prefix
 - **ID tracking**: `google_task_id` field links local items to remote tasks
 - **Built-in OAuth client**: Uses hardcoded public client ID for seamless authentication
-- **Embedded client secret for native app**: For desktop/native OAuth clients, the client secret is embedded via `GOOGLE_OAUTH_CLIENT_SECRET`. This is acceptable and expected per Google's guidance for native apps using PKCE. See `https://developers.google.com/identity/protocols/oauth2/native-app`.
+- **Embedded client secret for native app**: For desktop/native OAuth clients, the client secret is embedded via `GOOGLE_OAUTH_CLIENT_SECRET` and is always sent in token calls. This is acceptable and expected per Google's guidance for native apps using PKCE. See `https://developers.google.com/identity/protocols/oauth2/native-app`.
 
 ## Data Format and Storage
 
@@ -89,7 +89,7 @@ The application reads from `~/.juggler/TODOs.yaml` on startup and automatically 
 
 - `GOOGLE_TASKS_LIST_NAME`: Set to "juggler" - the Google Tasks list name for sync operations
 - `GOOGLE_OAUTH_CLIENT_ID`: Hardcoded public OAuth client ID for browser authentication
-- `GOOGLE_OAUTH_CLIENT_SECRET`: Embedded client secret for the desktop/native client. For native apps, this value is not confidential and may be embedded. The app will omit it if empty and fall back to pure PKCE.
+- `GOOGLE_OAUTH_CLIENT_SECRET`: Embedded client secret for the desktop/native client; always sent in token exchanges.
 - TUI keyboard shortcuts defined in `ui.rs` constants:
   - `j/k` - Navigate up/down between items
   - `o` - Toggle expand/collapse item (show/hide comments)

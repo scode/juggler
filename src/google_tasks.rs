@@ -89,24 +89,13 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        let params = if let Some(secret) = GOOGLE_OAUTH_CLIENT_SECRET {
-            info!(
-                "Using embedded client_secret for token refresh (desktop/native client)"
-            );
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-                ("client_secret", secret),
-            ]
-        } else {
-            info!("No client_secret configured - using public client token refresh");
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-            ]
-        };
+        let params = vec![
+            ("client_id", self.credentials.client_id.as_str()),
+            ("refresh_token", self.credentials.refresh_token.as_str()),
+            ("grant_type", "refresh_token"),
+            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
+        ];
+        info!("Using embedded client_secret for token refresh (desktop/native client)");
 
         let response = self.client.post(token_url).form(&params).send().await?;
 

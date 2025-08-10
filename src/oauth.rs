@@ -254,26 +254,14 @@ async fn exchange_code_for_tokens(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    let params = if let Some(secret) = GOOGLE_OAUTH_CLIENT_SECRET {
-        info!("Using embedded client_secret for token exchange (desktop/native client)");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-            ("client_secret", secret),
-        ]
-    } else {
-        info!("No client_secret configured - using PKCE public client flow");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ]
-    };
+    let params = vec![
+        ("client_id", client_id),
+        ("code", auth_code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", code_verifier),
+        ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
+    ];
 
     // Debug log the parameters being sent (excluding sensitive data)
     info!("Token exchange parameters:");
@@ -282,9 +270,7 @@ async fn exchange_code_for_tokens(
     info!("  redirect_uri: {redirect_uri}");
     info!("  code_verifier: [PRESENT - {} chars]", code_verifier.len());
     info!("  code: [PRESENT - {} chars]", auth_code.len());
-    if GOOGLE_OAUTH_CLIENT_SECRET.is_some() {
-        info!("  client_secret: [PRESENT - embedded]");
-    }
+    info!("  client_secret: [PRESENT - embedded]");
 
     let response = client
         .post(GOOGLE_OAUTH_TOKEN_URL)
