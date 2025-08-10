@@ -314,13 +314,18 @@ impl<T: TodoEditor> App<T> {
         let is_selected = Some(index) == self.get_selected_item_index();
 
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
-        let selection_box = if todo.selected { "[x] " } else { "[ ] " };
-        let done_box = if todo.done { "[✓] " } else { "[ ] " };
+        // Single status box: selection takes precedence over done
+        let status_box = if todo.selected {
+            "[x] "
+        } else if todo.done {
+            "[✓] "
+        } else {
+            "[ ] "
+        };
 
         let mut first_line_spans = Vec::new();
         first_line_spans.push(Span::raw(cursor_prefix));
-        first_line_spans.push(Span::raw(selection_box));
-        first_line_spans.push(Span::raw(done_box));
+        first_line_spans.push(Span::raw(status_box));
 
         if is_selected {
             first_line_spans.push(Span::styled(
@@ -899,10 +904,10 @@ mod tests {
         ];
         let app = App::new(items, NoOpEditor);
 
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] [ ] a");
+        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
         assert_eq!(
             text_to_string(&app.display_text_internal(1)),
-            "  [ ] [ ] b >>>\n         c1\n         c2"
+            "  [ ] b >>>\n         c1\n         c2"
         );
     }
 
@@ -931,18 +936,18 @@ mod tests {
         let mut app = App::new(items, NoOpEditor);
 
         // Initially, not selected
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] [ ] first");
+        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] first");
 
         // Toggle selection on current item
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
         assert!(app.items[0].selected);
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [x] [ ] first");
+        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [x] first");
 
         // Move cursor and select second item as well
         app.select_next_internal();
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
         assert!(app.items[1].selected);
-        assert_eq!(text_to_string(&app.display_text_internal(1)), "▶ [x] [ ] second");
+        assert_eq!(text_to_string(&app.display_text_internal(1)), "▶ [x] second");
     }
 
     #[test]
