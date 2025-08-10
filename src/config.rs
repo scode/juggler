@@ -10,7 +10,7 @@ pub const GOOGLE_OAUTH_CLIENT_ID: &str =
 ///   which explains that installed applications cannot keep secrets confidential and should use the
 ///   public client flow (PKCE). As a result, the "client secret" associated with a desktop client
 ///   is effectively public. Embedding it is acceptable and expected.
-/// - Consequence: Anyone who has this value can technically impersonate this application during the
+/// - Consequence: Anyone who has this value can impersonate this application during the
 ///   OAuth flow (they can present the same client id/secret). This is by design for native apps and
 ///   is mitigated by user consent and PKCE. Security relies on the user approving scopes for their
 ///   Google account, not on the secrecy of this string.
