@@ -54,6 +54,11 @@ pub struct GoogleOAuthClient {
     oauth_token_url: String,
 }
 
+// Helper to display Option<String> values in logs
+fn display_opt(value: &Option<String>) -> &str {
+    value.as_deref().unwrap_or("<none>")
+}
+
 impl GoogleOAuthClient {
     pub fn new(credentials: GoogleOAuthCredentials) -> Self {
         Self {
@@ -245,7 +250,8 @@ async fn sync_to_tasks_with_base_url(
         .into_iter()
         .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
         .ok_or(format!(
-            "No '{GOOGLE_TASKS_LIST_NAME}' task list found in Google Tasks"
+            "No '{}' task list found in Google Tasks",
+            GOOGLE_TASKS_LIST_NAME
         ))?;
     info!("Parent task list ID: {}", juggler_list.id);
     // Get all existing tasks from the sync list
@@ -287,17 +293,52 @@ async fn sync_to_tasks_with_base_url(
                         || google_task.due != todo.due_date.map(|d| d.to_rfc3339());
 
                     if needs_update {
+                        // Compute desired values for comparison/logging
+                        let desired_title = format!("j:{}", todo.title);
+                        let desired_notes: Option<String> = todo.comment.clone();
+                        let desired_status = if todo.done { "completed" } else { "needsAction" };
+                        let desired_due: Option<String> = todo.due_date.map(|d| d.to_rfc3339());
+
+                        info!(
+                            "Detected changes for Google Task (ID: {}):",
+                            task_id
+                        );
+                        if google_task.title != desired_title {
+                            info!(
+                                " - title: '{}' -> '{}'",
+                                google_task.title,
+                                desired_title
+                            );
+                        }
+                        if google_task.notes != desired_notes {
+                            info!(
+                                " - notes: {} -> {}",
+                                display_opt(&google_task.notes),
+                                display_opt(&desired_notes)
+                            );
+                        }
+                        if (google_task.status == "completed") != todo.done {
+                            info!(
+                                " - status: '{}' -> '{}'",
+                                google_task.status,
+                                desired_status
+                            );
+                        }
+                        if google_task.due != desired_due {
+                            info!(
+                                " - due: {} -> {}",
+                                display_opt(&google_task.due),
+                                display_opt(&desired_due)
+                            );
+                        }
+
                         // Update the task
                         let updated_task = GoogleTask {
                             id: Some(task_id.clone()),
-                            title: format!("j:{}", todo.title),
-                            notes: todo.comment.clone(),
-                            status: if todo.done {
-                                "completed".to_string()
-                            } else {
-                                "needsAction".to_string()
-                            },
-                            due: todo.due_date.map(|d| d.to_rfc3339()),
+                            title: desired_title,
+                            notes: desired_notes,
+                            status: desired_status.to_string(),
+                            due: desired_due,
                             updated: None,
                             completed: None,
                         };
@@ -398,9 +439,9 @@ async fn sync_to_tasks_with_base_url(
     }
 
     if dry_run {
-        info!("Sync completed in DRY RUN mode - no actual changes were made");
+        info!("DRY RUN complete - no changes were made");
     } else {
-        info!("Sync completed successfully");
+        info!("Sync complete");
     }
 
     Ok(())
