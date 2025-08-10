@@ -1,7 +1,10 @@
 use chrono::Utc;
 use log::info;
 
-use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME, GOOGLE_OAUTH_CLIENT_SECRET};
+use crate::config::{
+    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
+    GOOGLE_TASKS_LIST_NAME,
+};
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
