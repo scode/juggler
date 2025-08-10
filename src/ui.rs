@@ -314,7 +314,7 @@ impl<T: TodoEditor> App<T> {
         let is_selected = Some(index) == self.get_selected_item_index();
 
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
-        let checkbox = if todo.done { "[x] " } else { "[ ] " };
+        let checkbox = if todo.done { "[✓] " } else { "[ ] " };
 
         let mut first_line_spans = Vec::new();
         first_line_spans.push(Span::raw(cursor_prefix));
