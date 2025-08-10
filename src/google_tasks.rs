@@ -2,7 +2,6 @@ use chrono::Utc;
 use log::info;
 
 use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
-use crate::credentials::load_client_secret_from_default_path;
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -93,30 +92,18 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        let loaded_secret = load_client_secret_from_default_path(&self.credentials.client_id);
-
-        let params = if let Some(secret) = loaded_secret.as_deref() {
-            info!("Using client_secret from local credentials file for token refresh");
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-                ("client_secret", secret),
-            ]
-        } else {
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-            ]
-        };
+        let params = vec![
+            ("client_id", self.credentials.client_id.as_str()),
+            ("refresh_token", self.credentials.refresh_token.as_str()),
+            ("grant_type", "refresh_token"),
+        ];
 
         let response = self.client.post(token_url).form(&params).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            let guidance = "Google indicates client_secret is missing. This usually means the client id is a Web (confidential) client. Use a Desktop (Installed app) client id and PKCE. Re-run `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to get a refresh token tied to the desktop client which needs no secret.";
+            let guidance = "Google indicates client_secret is missing. This usually means the client id is treated as a Web (confidential) client. Use a Desktop (Installed app) client id and PKCE. Re-run `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to get a refresh token tied to a desktop client which needs no secret.";
             return Err(format!(
                 "OAuth token refresh failed with status {}: {}\n{}",
                 status, body, guidance

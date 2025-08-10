@@ -5,7 +5,6 @@ use std::io;
 use log::{error, info};
 
 mod config;
-mod credentials;
 mod google_tasks;
 mod oauth;
 mod store;

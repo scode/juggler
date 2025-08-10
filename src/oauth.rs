@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::config::{GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE};
-use crate::credentials::load_client_secret_from_default_path;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -256,28 +255,13 @@ async fn exchange_code_for_tokens(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    // Attempt to auto-load a client_secret from local credentials file as a compatibility shim
-    let loaded_secret = load_client_secret_from_default_path(client_id);
-
-    let params = if let Some(secret) = loaded_secret.as_deref() {
-        info!("Using client_secret from local credentials file for token exchange");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-            ("client_secret", secret),
-        ]
-    } else {
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ]
-    };
+    let params = vec![
+        ("client_id", client_id),
+        ("code", auth_code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", code_verifier),
+    ];
 
     // Debug log the parameters being sent (excluding sensitive data)
     info!("Token exchange parameters:");
@@ -297,7 +281,7 @@ async fn exchange_code_for_tokens(
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
         // Provide actionable guidance for common misconfiguration
-        let guidance = "Google returned client_secret is missing. If you are certain this is a Desktop client id, Google may still require the field. Save a JSON file at ~/.juggler/google_oauth_client.json containing your client_secret to allow the exchange (supports Google’s downloaded JSON { installed: { ... } } or a flat {\"client_id\":...,\"client_secret\":...}). Alternatively, retry with a client id that does not require a secret.";
+        let guidance = "Google returned client_secret is missing. This usually means the client id is treated as a Web (confidential) client. Use a Desktop (Installed app) client id with PKCE. Re-run `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to obtain a refresh token bound to a desktop client which does not require a client secret.";
         return Err(format!(
             "Token exchange failed ({}): {}\n{}",
             status, error_text, guidance
