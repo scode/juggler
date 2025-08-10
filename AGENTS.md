@@ -1,7 +1,3 @@
-## hello world
-
-Hello there! Wishing you a productive session and green builds. Happy hacking!
-
 ### Maintenance rule for agents
 
 Always keep this file updated when you change the codebase:
