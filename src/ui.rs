@@ -2,10 +2,12 @@ use std::io;
 
 use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+#[cfg(test)]
+use ratatui::style::Color;
 use ratatui::{
     DefaultTerminal, Frame,
-    style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    style::{Modifier, Style},
+    text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
@@ -53,8 +55,9 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn collapsed_summary(&self) -> Vec<Span> {
-        let mut spans = Vec::new();
+    #[cfg(test)]
+    pub fn expanded_text(&self) -> Text<'_> {
+        let mut first_line_spans = Vec::new();
 
         // Add relative time if due date exists
         if let Some(relative_time) = self.format_relative_time() {
@@ -63,62 +66,39 @@ impl Todo {
                 Some(DueDateUrgency::DueSoon) => Color::Yellow,
                 _ => Color::White,
             };
-            spans.push(Span::styled(
+            first_line_spans.push(Span::styled(
                 format!("{relative_time} "),
                 Style::default().fg(color),
             ));
         }
 
-        spans.push(Span::raw(&self.title));
-        if self.has_comment() {
-            if self.expanded {
-                spans.push(Span::raw(" >>>"));
-            } else {
-                spans.push(Span::raw(" >"));
-            }
-        }
-        spans
-    }
-
-    pub fn has_comment(&self) -> bool {
-        self.comment
+        first_line_spans.push(Span::raw(&self.title));
+        let has_comment = self
+            .comment
             .as_ref()
             .map(|c| !c.trim().is_empty())
-            .unwrap_or(false)
-    }
-
-    pub fn expanded_text(&self) -> Text {
-        let mut spans = Vec::new();
-
-        // Add relative time if due date exists
-        if let Some(relative_time) = self.format_relative_time() {
-            let color = match self.due_date_urgency() {
-                Some(DueDateUrgency::Overdue) => Color::Red,
-                Some(DueDateUrgency::DueSoon) => Color::Yellow,
-                _ => Color::White,
-            };
-            spans.push(Span::styled(
-                format!("{relative_time} "),
-                Style::default().fg(color),
-            ));
+            .unwrap_or(false);
+        if has_comment {
+            first_line_spans.push(Span::raw(" >>>"));
         }
 
-        spans.push(Span::raw(&self.title));
-        if self.has_comment() {
-            spans.push(Span::raw(" >>>"));
-        }
-
-        if let Some(comment) = &self.comment {
-            let mut lines = vec![Line::from(spans)];
+        let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
+        if self.expanded
+            && has_comment
+            && let Some(comment) = &self.comment
+        {
             for line in comment.lines() {
-                lines.push(Line::from(vec![Span::raw(format!("         {line}"))]));
+                lines.push(ratatui::text::Line::from(vec![
+                    Span::raw("         "),
+                    Span::raw(line),
+                ]));
             }
-            Text::from(lines)
-        } else {
-            Text::from(Line::from(spans))
         }
+
+        Text::from(lines)
     }
 
+    #[cfg(test)]
     pub fn format_relative_time(&self) -> Option<String> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -148,6 +128,7 @@ impl Todo {
         })
     }
 
+    #[cfg(test)]
     pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -164,8 +145,41 @@ impl Todo {
             }
         })
     }
+
+    #[cfg(test)]
+    pub fn has_comment(&self) -> bool {
+        self.comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    #[cfg(test)]
+    pub fn collapsed_summary(&self) -> Vec<Span<'_>> {
+        let mut spans = Vec::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{relative_time} "),
+                Style::default().fg(color),
+            ));
+        }
+
+        spans.push(Span::raw(&self.title));
+        if self.has_comment() {
+            spans.push(Span::raw(" >"));
+        }
+        spans
+    }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DueDateUrgency {
     Overdue,
@@ -295,30 +309,49 @@ impl<T: TodoEditor> App<T> {
         frame.render_widget(help_widget, help_area);
     }
 
-    fn display_text_internal(&self, index: usize) -> Text {
+    fn display_text_internal(&self, index: usize) -> Text<'_> {
         let todo = &self.items[index];
         let is_selected = Some(index) == self.get_selected_item_index();
-        let cursor_prefix = if is_selected { "▶ " } else { "  " };
-        let checkbox = if todo.selected { "[x] " } else { "[ ] " };
 
-        if todo.expanded {
-            let mut text = todo.expanded_text();
-            // Prepend cursor and checkbox to the first line
-            if let Some(first_line) = text.lines.get_mut(0) {
-                first_line.spans.insert(0, Span::raw(checkbox));
-                first_line.spans.insert(0, Span::raw(cursor_prefix));
-            } else {
-                text.lines.insert(
-                    0,
-                    Line::from(vec![Span::raw(cursor_prefix), Span::raw(checkbox)]),
-                );
-            }
-            text
+        let cursor_prefix = if is_selected { "▶ " } else { "  " };
+        let checkbox = if todo.done { "[x] " } else { "[ ] " };
+
+        let mut first_line_spans = Vec::new();
+        first_line_spans.push(Span::raw(cursor_prefix));
+        first_line_spans.push(Span::raw(checkbox));
+
+        if is_selected {
+            first_line_spans.push(Span::styled(
+                &todo.title,
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
         } else {
-            let mut spans = vec![Span::raw(cursor_prefix), Span::raw(checkbox)];
-            spans.extend(todo.collapsed_summary());
-            Text::from(Line::from(spans))
+            first_line_spans.push(Span::raw(&todo.title));
         }
+
+        let has_comment = todo
+            .comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false);
+        if todo.expanded && has_comment {
+            first_line_spans.push(Span::raw(" >>>"));
+        }
+
+        let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
+        if todo.expanded
+            && has_comment
+            && let Some(comment) = &todo.comment
+        {
+            for line in comment.lines() {
+                lines.push(ratatui::text::Line::from(vec![
+                    Span::raw("         "),
+                    Span::raw(line),
+                ]));
+            }
+        }
+
+        Text::from(lines)
     }
 
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -362,10 +395,10 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_selected(&mut self) {
-        if let Some(i) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get_mut(i) {
-                item.expanded = !item.expanded;
-            }
+        if let Some(i) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(i)
+        {
+            item.expanded = !item.expanded;
         }
     }
 
@@ -486,10 +519,10 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_select(&mut self) {
-        if let Some(i) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get_mut(i) {
-                item.selected = !item.selected;
-            }
+        if let Some(i) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(i)
+        {
+            item.selected = !item.selected;
         }
     }
 
@@ -552,20 +585,20 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn edit_item(&mut self) {
-        if let Some(cursor_idx) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get(cursor_idx) {
-                let result = self.editor.edit_todo(item);
+        if let Some(cursor_idx) = self.get_selected_item_index()
+            && let Some(item) = self.items.get(cursor_idx)
+        {
+            let result = self.editor.edit_todo(item);
 
-                match result {
-                    Ok(updated_item) => {
-                        self.items[cursor_idx] = updated_item;
-                        // Update pending count in case done status changed
-                        self.pending_count = self.items.iter().filter(|item| !item.done).count();
-                    }
-                    Err(_) => {
-                        // Editor failed or was cancelled - do nothing
-                        // In a more sophisticated app, we might show an error message
-                    }
+            match result {
+                Ok(updated_item) => {
+                    self.items[cursor_idx] = updated_item;
+                    // Update pending count in case done status changed
+                    self.pending_count = self.items.iter().filter(|item| !item.done).count();
+                }
+                Err(_) => {
+                    // Editor failed or was cancelled - do nothing
+                    // In a more sophisticated app, we might show an error message
                 }
             }
         }

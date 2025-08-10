@@ -156,10 +156,10 @@ async fn handle_callback(
     let query = match query {
         Some(q) => q,
         None => {
-            if let Ok(mut tx_guard) = oauth_state.tx.lock() {
-                if let Some(tx) = tx_guard.take() {
-                    let _ = tx.send(Err("No query parameters".to_string()));
-                }
+            if let Ok(mut tx_guard) = oauth_state.tx.lock()
+                && let Some(tx) = tx_guard.take()
+            {
+                let _ = tx.send(Err("No query parameters".to_string()));
             }
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
@@ -177,10 +177,10 @@ async fn handle_callback(
         let error_description = params.get("error_description").unwrap_or(&default_error);
         let error_msg = format!("{error}: {error_description}");
 
-        if let Ok(mut tx_guard) = oauth_state.tx.lock() {
-            if let Some(tx) = tx_guard.take() {
-                let _ = tx.send(Err(error_msg));
-            }
+        if let Ok(mut tx_guard) = oauth_state.tx.lock()
+            && let Some(tx) = tx_guard.take()
+        {
+            let _ = tx.send(Err(error_msg));
         }
 
         return Response::builder()
@@ -194,10 +194,10 @@ async fn handle_callback(
     }
 
     if let Some(code) = params.get("code") {
-        if let Ok(mut tx_guard) = oauth_state.tx.lock() {
-            if let Some(tx) = tx_guard.take() {
-                let _ = tx.send(Ok(code.clone()));
-            }
+        if let Ok(mut tx_guard) = oauth_state.tx.lock()
+            && let Some(tx) = tx_guard.take()
+        {
+            let _ = tx.send(Ok(code.clone()));
         }
 
         Response::builder()
@@ -214,10 +214,10 @@ async fn handle_callback(
             ))
             .unwrap()
     } else {
-        if let Ok(mut tx_guard) = oauth_state.tx.lock() {
-            if let Some(tx) = tx_guard.take() {
-                let _ = tx.send(Err("Missing authorization code".to_string()));
-            }
+        if let Ok(mut tx_guard) = oauth_state.tx.lock()
+            && let Some(tx) = tx_guard.take()
+        {
+            let _ = tx.send(Err("Missing authorization code".to_string()));
         }
 
         Response::builder()

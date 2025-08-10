@@ -96,16 +96,16 @@ pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> i
     let file_path = file_path.as_ref();
 
     // Ensure the directory exists with restricted permissions
-    if let Some(parent) = file_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)?;
-            // Set directory permissions to owner-only (0o700) on Unix systems
-            #[cfg(unix)]
-            {
-                let mut perms = fs::metadata(parent)?.permissions();
-                perms.set_mode(0o700);
-                fs::set_permissions(parent, perms)?;
-            }
+    if let Some(parent) = file_path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)?;
+        // Set directory permissions to owner-only (0o700) on Unix systems
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(parent)?.permissions();
+            perms.set_mode(0o700);
+            fs::set_permissions(parent, perms)?;
         }
     }
 

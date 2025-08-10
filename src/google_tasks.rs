@@ -79,10 +79,9 @@ impl GoogleOAuthClient {
     pub async fn get_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         // Check if we have a valid cached token
         if let (Some(token), Some(expires_at)) = (&self.cached_access_token, &self.token_expires_at)
+            && Utc::now() < *expires_at - chrono::Duration::minutes(5)
         {
-            if Utc::now() < *expires_at - chrono::Duration::minutes(5) {
-                return Ok(token.clone());
-            }
+            return Ok(token.clone());
         }
 
         // Refresh the token
