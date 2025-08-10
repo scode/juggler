@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use crate::config::{GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE};
+use crate::config::{
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
+    GOOGLE_TASKS_SCOPE,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -188,7 +191,7 @@ async fn handle_callback(
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
                 format!("<html><body><h1>Authentication Failed</h1><p>Error: {error_description}</p></body></html>")
-                .into(),
+                    .into(),
             ))
             .unwrap();
     }
@@ -254,29 +257,14 @@ async fn exchange_code_for_tokens(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
-    let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
-
-    let params = if let Some(secret) = &client_secret {
-        info!("Using client_secret from JUGGLER_CLIENT_SECRET environment variable");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-            ("client_secret", secret),
-        ]
-    } else {
-        info!("No client_secret - using PKCE public client flow");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ]
-    };
+    let params = vec![
+        ("client_id", client_id),
+        ("code", auth_code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", code_verifier),
+        ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
+    ];
 
     // Debug log the parameters being sent (excluding sensitive data)
     info!("Token exchange parameters:");
@@ -285,9 +273,7 @@ async fn exchange_code_for_tokens(
     info!("  redirect_uri: {redirect_uri}");
     info!("  code_verifier: [PRESENT - {} chars]", code_verifier.len());
     info!("  code: [PRESENT - {} chars]", auth_code.len());
-    if client_secret.is_some() {
-        info!("  client_secret: [PRESENT - from environment variable]");
-    }
+    info!("  client_secret: [PRESENT - embedded]");
 
     let response = client
         .post(GOOGLE_OAUTH_TOKEN_URL)

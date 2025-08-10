@@ -1,7 +1,10 @@
 use chrono::Utc;
 use log::info;
 
-use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
+use crate::config::{
+    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
+    GOOGLE_TASKS_LIST_NAME,
+};
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -77,41 +80,25 @@ impl GoogleOAuthClient {
     }
 
     pub async fn get_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
-        // Check if we have a valid cached token
         if let (Some(token), Some(expires_at)) = (&self.cached_access_token, &self.token_expires_at)
             && Utc::now() < *expires_at - chrono::Duration::minutes(5)
         {
             return Ok(token.clone());
         }
 
-        // Refresh the token
         self.refresh_access_token().await
     }
 
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
-        let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
-
-        let params = if let Some(secret) = &client_secret {
-            info!(
-                "Using client_secret from JUGGLER_CLIENT_SECRET environment variable for token refresh"
-            );
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-                ("client_secret", secret.as_str()),
-            ]
-        } else {
-            info!("No client_secret - using public client token refresh");
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-            ]
-        };
+        let params = vec![
+            ("client_id", self.credentials.client_id.as_str()),
+            ("refresh_token", self.credentials.refresh_token.as_str()),
+            ("grant_type", "refresh_token"),
+            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
+        ];
+        info!("Using embedded client_secret for token refresh (desktop/native client)");
 
         let response = self.client.post(token_url).form(&params).send().await?;
 
@@ -126,7 +113,6 @@ impl GoogleOAuthClient {
 
         let token_response: OAuthTokenResponse = response.json().await?;
 
-        // Cache the new token
         self.cached_access_token = Some(token_response.access_token.clone());
         self.token_expires_at = Some(
             Utc::now()
@@ -169,7 +155,6 @@ async fn create_google_task(
             "[DRY RUN] Would create task: {} with status: {}",
             new_task.title, new_task.status
         );
-        // In dry run mode, generate a fake ID to keep the sync logic working
         todo.google_task_id = Some(format!("dry-run-id-{}", todo.title.len()));
     } else {
         let response = client
