@@ -30,3 +30,7 @@ pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
 }
 
 pub const DEFAULT_EDITOR: &str = "emacs";
+
+pub fn get_oauth_client_id() -> String {
+    std::env::var("JUGGLER_CLIENT_ID").unwrap_or_else(|_| GOOGLE_OAUTH_CLIENT_ID.to_string())
+}

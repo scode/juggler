@@ -103,7 +103,7 @@ impl GoogleOAuthClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            let guidance = "If this mentions invalid_client or unauthorized_client due to missing client_secret, your refresh token belongs to a confidential Web client. Re-run `juggler login` to obtain a new refresh token issued to the desktop (PKCE) client, which does not require a client secret.";
+            let guidance = "Google indicates client_secret is missing. This usually means the client id is a Web (confidential) client. Use a Desktop (Installed app) client id and PKCE. Re-run `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to get a refresh token tied to the desktop client which needs no secret.";
             return Err(format!(
                 "OAuth token refresh failed with status {}: {}\n{}",
                 status, body, guidance

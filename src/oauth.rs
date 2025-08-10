@@ -280,7 +280,7 @@ async fn exchange_code_for_tokens(
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
         // Provide actionable guidance for common misconfiguration
-        let guidance = "If this mentions invalid_client or unauthorized_client due to a missing client_secret, your refresh code was issued to a confidential Web client. Re-run: `juggler login` to obtain a new refresh token bound to the desktop client (PKCE), which does not require a client secret.";
+        let guidance = "Google returned client_secret is missing. This usually means the client id you used is a Web (confidential) client. Use a Desktop (Installed app) client id and PKCE instead. Re-run: `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to obtain a refresh token bound to the desktop client which does not require a client secret.";
         return Err(format!(
             "Token exchange failed ({}): {}\n{}",
             status, error_text, guidance
