@@ -83,7 +83,10 @@ impl Todo {
         }
 
         let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
-        if self.expanded && has_comment && let Some(comment) = &self.comment {
+        if self.expanded
+            && has_comment
+            && let Some(comment) = &self.comment
+        {
             for line in comment.lines() {
                 lines.push(ratatui::text::Line::from(vec![
                     Span::raw("         "),
@@ -336,7 +339,10 @@ impl<T: TodoEditor> App<T> {
         }
 
         let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
-        if todo.expanded && has_comment && let Some(comment) = &todo.comment {
+        if todo.expanded
+            && has_comment
+            && let Some(comment) = &todo.comment
+        {
             for line in comment.lines() {
                 lines.push(ratatui::text::Line::from(vec![
                     Span::raw("         "),
