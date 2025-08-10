@@ -1,7 +1,10 @@
 use chrono::Utc;
 use log::info;
 
-use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
+use crate::config::{
+    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
+    GOOGLE_TASKS_LIST_NAME,
+};
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -96,6 +99,7 @@ impl GoogleOAuthClient {
             ("client_id", self.credentials.client_id.as_str()),
             ("refresh_token", self.credentials.refresh_token.as_str()),
             ("grant_type", "refresh_token"),
+            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
         ];
 
         let response = self.client.post(token_url).form(&params).send().await?;

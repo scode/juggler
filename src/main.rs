@@ -120,7 +120,10 @@ async fn main() -> io::Result<()> {
                         // OAuth refresh token authentication
                         (None, Some(refresh_token)) => {
                             info!("Using OAuth refresh token authentication");
-                            let credentials = GoogleOAuthCredentials { client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(), refresh_token };
+                            let credentials = GoogleOAuthCredentials {
+                                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+                                refresh_token,
+                            };
                             let oauth_client = GoogleOAuthClient::new(credentials);
 
                             if let Err(e) =

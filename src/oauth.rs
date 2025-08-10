@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use crate::config::{GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE};
+use crate::config::{
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
+    GOOGLE_TASKS_SCOPE,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -261,6 +264,7 @@ async fn exchange_code_for_tokens(
         ("grant_type", "authorization_code"),
         ("redirect_uri", redirect_uri),
         ("code_verifier", code_verifier),
+        ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
     ];
 
     // Debug log the parameters being sent (excluding sensitive data)

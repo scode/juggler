@@ -143,6 +143,9 @@ juggler sync google-tasks --refresh-token "1//04xxxxx-xxxxxxxxxx"
 - Long-term refresh tokens
 - No Google Cloud Console setup required
 
+Note on client_secret for Desktop apps:
+- Google issues a `client_secret` even for Installed/Desktop clients. For these apps, the secret is not treated as confidential because secrets cannot be kept in end-user environments. Security relies on user consent, PKCE, and loopback redirects rather than a private secret. Google’s token endpoint may still require the `client_secret` parameter, so this project embeds it for the Desktop client id. See Google’s guidance: https://developers.google.com/identity/protocols/oauth2/native-app
+
 #### Method 2: Quick Access Token (Legacy)
 
 For quick testing or one-time use, you can get a short-lived access token:

@@ -11,6 +11,21 @@ pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
 pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
 
+/// Google OAuth client secret for the installed (Desktop) application.
+///
+/// Important:
+/// - For installed applications, this value is not a confidential secret.
+/// - Google issues a `client_secret` even for Desktop clients, but it is not treated as
+///   a secret because installed apps cannot keep secrets.
+/// - Security for installed apps relies on user consent, PKCE (code verifier/challenge),
+///   and loopback redirect URIs — not on a private client secret.
+/// - Nevertheless, Google's token endpoint may still require the `client_secret` parameter
+///   to be present during code exchange and refresh for some Desktop clients.
+/// - Embedding the value here is therefore expected and acceptable for Desktop apps.
+///
+/// Reference: https://developers.google.com/identity/protocols/oauth2/native-app
+pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "REPLACE_WITH_YOUR_DESKTOP_CLIENT_SECRET";
+
 #[cfg(test)]
 pub const DEFAULT_TODOS_FILE: &str = "TODOs.yaml";
 
