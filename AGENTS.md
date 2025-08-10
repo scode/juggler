@@ -94,6 +94,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - OAuth client id is public; do not require a client secret. Optional `JUGGLER_CLIENT_SECRET` may be honored by code paths—verify before use.
 
 ### Contribution checklist
+- Mandatory PR hygiene: Before creating or updating a PR, run `cargo fmt --all` and commit any formatting changes.
 - Build, test, format, lint:
   - `cargo build`
   - `cargo test`
