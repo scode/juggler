@@ -1,3 +1,10 @@
+### Maintenance rule for agents
+
+Always keep this file updated when you change the codebase:
+- Fix anything incorrect or outdated here as part of your edit.
+- For major changes, add or expand sections to capture the new architecture and behavior.
+- Ensure commands, invariants, data model, and workflows remain accurate.
+
 ## Agent Guide: juggler
 
 A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way sync to Google Tasks. Dual-mode: interactive TUI (default) and CLI (login/sync). Async stack with Tokio; modular architecture.
