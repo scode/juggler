@@ -4,10 +4,12 @@ use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
+#[cfg(test)]
+use ratatui::style::Color;
 
 use crate::store::{TodoItem, edit_todo_item};
 
@@ -53,6 +55,7 @@ pub struct Todo {
 }
 
 impl Todo {
+    #[cfg(test)]
     pub fn expanded_text(&self) -> Text<'_> {
         let mut spans = Vec::new();
 
@@ -85,6 +88,7 @@ impl Todo {
         Text::from(ratatui::text::Line::from(spans))
     }
 
+    #[cfg(test)]
     pub fn format_relative_time(&self) -> Option<String> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -114,6 +118,7 @@ impl Todo {
         })
     }
 
+    #[cfg(test)]
     pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -130,8 +135,41 @@ impl Todo {
             }
         })
     }
+
+    #[cfg(test)]
+    pub fn has_comment(&self) -> bool {
+        self.comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    #[cfg(test)]
+    pub fn collapsed_summary(&self) -> Vec<Span<'_>> {
+        let mut spans = Vec::new();
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = self.format_relative_time() {
+            let color = match self.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            spans.push(Span::styled(
+                format!("{relative_time} "),
+                Style::default().fg(color),
+            ));
+        }
+
+        spans.push(Span::raw(&self.title));
+        if self.has_comment() {
+            spans.push(Span::raw(" >"));
+        }
+        spans
+    }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DueDateUrgency {
     Overdue,
