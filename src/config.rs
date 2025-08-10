@@ -22,6 +22,10 @@ pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
 /// - Nevertheless, Google's token endpoint may still require the `client_secret` parameter
 ///   to be present during code exchange and refresh for some Desktop clients.
 /// - Embedding the value here is therefore expected and acceptable for Desktop apps.
+/// - This does allow others to impersonate this application (reuse this client_id/secret)
+///   in a PKCE flow. That is expected: Desktop clients are public clients by design. The
+///   practical impact is limited to branding and quota attribution; end-user account safety
+///   still depends on the user's consent and PKCE proof-of-possession.
 ///
 /// Reference: https://developers.google.com/identity/protocols/oauth2/native-app
 pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "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";
