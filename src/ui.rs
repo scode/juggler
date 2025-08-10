@@ -947,7 +947,10 @@ mod tests {
         app.select_next_internal();
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
         assert!(app.items[1].selected);
-        assert_eq!(text_to_string(&app.display_text_internal(1)), "▶ [x] second");
+        assert_eq!(
+            text_to_string(&app.display_text_internal(1)),
+            "▶ [x] second"
+        );
     }
 
     #[test]
