@@ -95,6 +95,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 
 ### Contribution checklist
 - Mandatory PR hygiene: Before creating or updating a PR, run `cargo fmt --all` and commit any formatting changes.
+- Mandatory EOF hygiene: Remove any trailing blank line at the end of each file before committing or opening/updating a PR.
 - Build, test, format, lint:
   - `cargo build`
   - `cargo test`
