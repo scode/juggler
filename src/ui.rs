@@ -355,15 +355,6 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        // Visually indicate items that are marked as selected via 'x'
-        if todo.selected {
-            if let Some(first_line) = lines.get_mut(0) {
-                for span in &mut first_line.spans {
-                    span.style = span.style.add_modifier(Modifier::REVERSED);
-                }
-            }
-        }
-
         Text::from(lines)
     }
 
