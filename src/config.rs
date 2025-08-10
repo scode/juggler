@@ -24,7 +24,7 @@ pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
 /// - Embedding the value here is therefore expected and acceptable for Desktop apps.
 ///
 /// Reference: https://developers.google.com/identity/protocols/oauth2/native-app
-pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "REPLACE_WITH_YOUR_DESKTOP_CLIENT_SECRET";
+pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "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";
 
 #[cfg(test)]
 pub const DEFAULT_TODOS_FILE: &str = "TODOs.yaml";
