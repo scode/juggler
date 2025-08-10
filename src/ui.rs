@@ -315,7 +315,6 @@ impl<T: TodoEditor> App<T> {
 
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
         let selection_box = if todo.selected { "[x] " } else { "[ ] " };
-        // Done indicator uses a check mark and never 'x'
         let done_box = if todo.done { "[✓] " } else { "[ ] " };
 
         let mut first_line_spans = Vec::new();
