@@ -1,5 +1,5 @@
 pub const GOOGLE_OAUTH_CLIENT_ID: &str =
-    "427291927957-ahaf2g5gp42oo70chpt3c189d6i7bhl8.apps.googleusercontent.com";
+    "427291927957-9bon53siil65sgblb6hi846n53ddpte3.apps.googleusercontent.com";
 
 /// Google OAuth client secret for the desktop (native) app client.
 ///
