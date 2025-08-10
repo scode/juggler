@@ -54,7 +54,8 @@ pub async fn run_oauth_flow(
 
     info!("Started local server on port {actual_port}");
 
-    let redirect_uri = format!("http://localhost:{actual_port}/callback");
+    // Use loopback 127.0.0.1 as recommended by Google for installed apps
+    let redirect_uri = format!("http://127.0.0.1:{actual_port}/");
 
     // Build authorization URL
     let auth_url = build_auth_url(&client_id, &redirect_uri, &code_challenge);
@@ -132,7 +133,7 @@ async fn handle_request(
     let response = match req.method() {
         &Method::GET => {
             let uri = req.uri();
-            if uri.path() == "/callback" {
+            if uri.path() == "/" || uri.path() == "/callback" {
                 handle_callback(uri.query(), oauth_state).await
             } else {
                 Response::builder()
