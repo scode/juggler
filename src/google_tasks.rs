@@ -296,13 +296,14 @@ async fn sync_to_tasks_with_base_url(
                         // Compute desired values for comparison/logging
                         let desired_title = format!("j:{}", todo.title);
                         let desired_notes: Option<String> = todo.comment.clone();
-                        let desired_status = if todo.done { "completed" } else { "needsAction" };
+                        let desired_status = if todo.done {
+                            "completed"
+                        } else {
+                            "needsAction"
+                        };
                         let desired_due: Option<String> = todo.due_date.map(|d| d.to_rfc3339());
 
-                        info!(
-                            "Detected changes for Google Task (ID: {}):",
-                            task_id
-                        );
+                        info!("Detected changes for Google Task (ID: {}):", task_id);
                         if google_task.title == desired_title {
                             info!(" - title: not changed");
                         } else {
@@ -311,10 +312,7 @@ async fn sync_to_tasks_with_base_url(
                         if google_task.notes == desired_notes {
                             info!(" - notes: not changed");
                         } else {
-                            info!(
-                                " - notes: changed to: {}",
-                                display_opt(&desired_notes)
-                            );
+                            info!(" - notes: changed to: {}", display_opt(&desired_notes));
                         }
                         if (google_task.status == "completed") == todo.done {
                             info!(" - status: not changed");
@@ -324,10 +322,7 @@ async fn sync_to_tasks_with_base_url(
                         if google_task.due == desired_due {
                             info!(" - due: not changed");
                         } else {
-                            info!(
-                                " - due: changed to: {}",
-                                display_opt(&desired_due)
-                            );
+                            info!(" - due: changed to: {}", display_opt(&desired_due));
                         }
 
                         // Update the task
