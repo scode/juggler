@@ -99,7 +99,6 @@ impl Todo {
         })
     }
 
-    #[cfg(test)]
     pub fn expanded_text(&self) -> Text<'_> {
         let mut first_line_spans = Vec::new();
 
