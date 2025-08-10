@@ -303,31 +303,29 @@ async fn sync_to_tasks_with_base_url(
                             "Detected changes for Google Task (ID: {}):",
                             task_id
                         );
-                        if google_task.title != desired_title {
-                            info!(
-                                " - title: '{}' -> '{}'",
-                                google_task.title,
-                                desired_title
-                            );
+                        if google_task.title == desired_title {
+                            info!(" - title: not changed");
+                        } else {
+                            info!(" - title: changed to: '{}'", desired_title);
                         }
-                        if google_task.notes != desired_notes {
+                        if google_task.notes == desired_notes {
+                            info!(" - notes: not changed");
+                        } else {
                             info!(
-                                " - notes: {} -> {}",
-                                display_opt(&google_task.notes),
+                                " - notes: changed to: {}",
                                 display_opt(&desired_notes)
                             );
                         }
-                        if (google_task.status == "completed") != todo.done {
-                            info!(
-                                " - status: '{}' -> '{}'",
-                                google_task.status,
-                                desired_status
-                            );
+                        if (google_task.status == "completed") == todo.done {
+                            info!(" - status: not changed");
+                        } else {
+                            info!(" - status: changed to: '{}'", desired_status);
                         }
-                        if google_task.due != desired_due {
+                        if google_task.due == desired_due {
+                            info!(" - due: not changed");
+                        } else {
                             info!(
-                                " - due: {} -> {}",
-                                display_opt(&google_task.due),
+                                " - due: changed to: {}",
                                 display_opt(&desired_due)
                             );
                         }
