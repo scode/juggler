@@ -34,7 +34,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Sync (recommended): `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>`
 - Dry-run: append `--dry-run`
 - Logging: prefix with `RUST_LOG=info|debug`
-- Lint/format: `cargo clippy`, `cargo fmt`
+- Lint/format: `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt`
 - Tests: `cargo test`
 
 ### TUI key bindings (core)
@@ -98,7 +98,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
   - `cargo build`
   - `cargo test`
   - `cargo fmt`
-  - `cargo clippy`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
 - Update `README.md` if user-visible behavior or flags change.
 - Add/adjust tests for new behavior (UI, store round-trips, OAuth, sync; use wiremock where applicable).
 - Keep logging helpful and behind `RUST_LOG` levels.
@@ -108,4 +108,4 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Login: `cargo run -- login`
 - Sync (refresh token): `RUST_LOG=info cargo run -- sync google-tasks --refresh-token "$JUGGLER_REFRESH_TOKEN"`
 - Dry-run: append `--dry-run`
-- Clean build + lint: `cargo clean && cargo build && cargo fmt && cargo clippy`
+- Clean build + lint: `cargo clean && cargo build && cargo fmt && cargo clippy --all-targets --all-features -- -D warnings`

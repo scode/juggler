@@ -53,7 +53,7 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn collapsed_summary(&self) -> Vec<Span> {
+    pub fn collapsed_summary(&self) -> Vec<Span<'_>> {
         let mut spans = Vec::new();
 
         // Add relative time if due date exists
@@ -87,7 +87,7 @@ impl Todo {
             .unwrap_or(false)
     }
 
-    pub fn expanded_text(&self) -> Text {
+    pub fn expanded_text(&self) -> Text<'_> {
         let mut spans = Vec::new();
 
         // Add relative time if due date exists
@@ -108,15 +108,15 @@ impl Todo {
             spans.push(Span::raw(" >>>"));
         }
 
-        if let Some(comment) = &self.comment {
-            let mut lines = vec![Line::from(spans)];
-            for line in comment.lines() {
-                lines.push(Line::from(vec![Span::raw(format!("         {line}"))]));
+        // If expanded, show the comment content
+        if self.expanded {
+            if let Some(comment) = &self.comment {
+                spans.push(Span::raw("\n"));
+                spans.push(Span::raw(comment));
             }
-            Text::from(lines)
-        } else {
-            Text::from(Line::from(spans))
         }
+
+        Text::from(spans)
     }
 
     pub fn format_relative_time(&self) -> Option<String> {
@@ -295,30 +295,28 @@ impl<T: TodoEditor> App<T> {
         frame.render_widget(help_widget, help_area);
     }
 
-    fn display_text_internal(&self, index: usize) -> Text {
+    fn display_text_internal(&self, index: usize) -> Text<'_> {
         let todo = &self.items[index];
         let is_selected = Some(index) == self.get_selected_item_index();
-        let cursor_prefix = if is_selected { "▶ " } else { "  " };
-        let checkbox = if todo.selected { "[x] " } else { "[ ] " };
+        let mut spans = Vec::new();
+
+        let checkbox = if todo.done { "[x]" } else { "[ ]" };
+        spans.push(Span::raw(format!("{checkbox} ")));
+
+        if is_selected {
+            spans.push(Span::styled(&todo.title, Style::default().add_modifier(Modifier::BOLD)));
+        } else {
+            spans.push(Span::raw(&todo.title));
+        }
 
         if todo.expanded {
-            let mut text = todo.expanded_text();
-            // Prepend cursor and checkbox to the first line
-            if let Some(first_line) = text.lines.get_mut(0) {
-                first_line.spans.insert(0, Span::raw(checkbox));
-                first_line.spans.insert(0, Span::raw(cursor_prefix));
-            } else {
-                text.lines.insert(
-                    0,
-                    Line::from(vec![Span::raw(cursor_prefix), Span::raw(checkbox)]),
-                );
+            if let Some(comment) = &todo.comment {
+                spans.push(Span::raw("\n"));
+                spans.push(Span::raw(comment));
             }
-            text
-        } else {
-            let mut spans = vec![Span::raw(cursor_prefix), Span::raw(checkbox)];
-            spans.extend(todo.collapsed_summary());
-            Text::from(Line::from(spans))
         }
+
+        Text::from(spans)
     }
 
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -362,10 +360,10 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_selected(&mut self) {
-        if let Some(i) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get_mut(i) {
-                item.expanded = !item.expanded;
-            }
+        if let Some(i) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(i)
+        {
+            item.expanded = !item.expanded;
         }
     }
 
@@ -486,10 +484,10 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_select(&mut self) {
-        if let Some(i) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get_mut(i) {
-                item.selected = !item.selected;
-            }
+        if let Some(i) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(i)
+        {
+            item.selected = !item.selected;
         }
     }
 
@@ -552,20 +550,20 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn edit_item(&mut self) {
-        if let Some(cursor_idx) = self.get_selected_item_index() {
-            if let Some(item) = self.items.get(cursor_idx) {
-                let result = self.editor.edit_todo(item);
+        if let Some(cursor_idx) = self.get_selected_item_index()
+            && let Some(item) = self.items.get(cursor_idx)
+        {
+            let result = self.editor.edit_todo(item);
 
-                match result {
-                    Ok(updated_item) => {
-                        self.items[cursor_idx] = updated_item;
-                        // Update pending count in case done status changed
-                        self.pending_count = self.items.iter().filter(|item| !item.done).count();
-                    }
-                    Err(_) => {
-                        // Editor failed or was cancelled - do nothing
-                        // In a more sophisticated app, we might show an error message
-                    }
+            match result {
+                Ok(updated_item) => {
+                    self.items[cursor_idx] = updated_item;
+                    // Update pending count in case done status changed
+                    self.pending_count = self.items.iter().filter(|item| !item.done).count();
+                }
+                Err(_) => {
+                    // Editor failed or was cancelled - do nothing
+                    // In a more sophisticated app, we might show an error message
                 }
             }
         }
