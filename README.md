@@ -143,6 +143,13 @@ juggler sync google-tasks --refresh-token "1//04xxxxx-xxxxxxxxxx"
 - Long-term refresh tokens
 - No Google Cloud Console setup required
 
+If Google demands a `client_secret` for your client id, you can optionally place a credentials file at `~/.juggler/google_oauth_client.json` with either the downloaded Google JSON (the `installed` object) or a flat JSON like:
+
+```json
+{ "client_id": "YOUR_CLIENT_ID", "client_secret": "YOUR_CLIENT_SECRET" }
+```
+The app will use this secret only for the token exchange/refresh if required.
+
 #### Method 2: Quick Access Token (Legacy)
 
 For quick testing or one-time use, you can get a short-lived access token:
