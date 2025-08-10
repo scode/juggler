@@ -2,11 +2,9 @@ use std::io;
 
 use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-#[cfg(test)]
-use ratatui::style::Color;
 use ratatui::{
     DefaultTerminal, Frame,
-    style::{Modifier, Style},
+    style::{Modifier, Style, Color},
     text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
@@ -55,6 +53,52 @@ pub struct Todo {
 }
 
 impl Todo {
+    pub fn format_relative_time(&self) -> Option<String> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+
+            let total_seconds = duration.num_seconds();
+            let abs_seconds = total_seconds.abs();
+
+            let (value, unit) = if abs_seconds < 60 {
+                (abs_seconds, "s")
+            } else if abs_seconds < 3600 {
+                (abs_seconds / 60, "m")
+            } else if abs_seconds < 86400 {
+                (abs_seconds / 3600, "h")
+            } else {
+                (abs_seconds / 86400, "d")
+            };
+
+            let time_str = if total_seconds < 0 {
+                format!("-{value}{unit}")
+            } else {
+                format!("{value}{unit}")
+            };
+
+            // Right-pad to 4 characters for alignment
+            format!("{time_str:>4}")
+        })
+    }
+
+    pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
+        self.due_date.map(|due| {
+            let now = Utc::now();
+            let duration = due.signed_duration_since(now);
+            let total_seconds = duration.num_seconds();
+
+            if total_seconds < 0 {
+                DueDateUrgency::Overdue
+            } else if total_seconds <= 86400 {
+                // 24 hours
+                DueDateUrgency::DueSoon
+            } else {
+                DueDateUrgency::Normal
+            }
+        })
+    }
+
     #[cfg(test)]
     pub fn expanded_text(&self) -> Text<'_> {
         let mut first_line_spans = Vec::new();
@@ -99,54 +143,6 @@ impl Todo {
     }
 
     #[cfg(test)]
-    pub fn format_relative_time(&self) -> Option<String> {
-        self.due_date.map(|due| {
-            let now = Utc::now();
-            let duration = due.signed_duration_since(now);
-
-            let total_seconds = duration.num_seconds();
-            let abs_seconds = total_seconds.abs();
-
-            let (value, unit) = if abs_seconds < 60 {
-                (abs_seconds, "s")
-            } else if abs_seconds < 3600 {
-                (abs_seconds / 60, "m")
-            } else if abs_seconds < 86400 {
-                (abs_seconds / 3600, "h")
-            } else {
-                (abs_seconds / 86400, "d")
-            };
-
-            let time_str = if total_seconds < 0 {
-                format!("-{value}{unit}")
-            } else {
-                format!("{value}{unit}")
-            };
-
-            // Right-pad to 4 characters for alignment
-            format!("{time_str:>4}")
-        })
-    }
-
-    #[cfg(test)]
-    pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
-        self.due_date.map(|due| {
-            let now = Utc::now();
-            let duration = due.signed_duration_since(now);
-            let total_seconds = duration.num_seconds();
-
-            if total_seconds < 0 {
-                DueDateUrgency::Overdue
-            } else if total_seconds <= 86400 {
-                // 24 hours
-                DueDateUrgency::DueSoon
-            } else {
-                DueDateUrgency::Normal
-            }
-        })
-    }
-
-    #[cfg(test)]
     pub fn has_comment(&self) -> bool {
         self.comment
             .as_ref()
@@ -179,7 +175,6 @@ impl Todo {
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DueDateUrgency {
     Overdue,
@@ -326,6 +321,19 @@ impl<T: TodoEditor> App<T> {
         let mut first_line_spans = Vec::new();
         first_line_spans.push(Span::raw(cursor_prefix));
         first_line_spans.push(Span::raw(status_box));
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = todo.format_relative_time() {
+            let color = match todo.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            first_line_spans.push(Span::styled(
+                format!("{relative_time} "),
+                Style::default().fg(color),
+            ));
+        }
 
         if is_selected {
             first_line_spans.push(Span::styled(
