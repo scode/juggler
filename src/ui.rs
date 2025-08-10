@@ -353,15 +353,15 @@ impl<T: TodoEditor> App<T> {
         }
 
         let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
-        if todo.expanded
-            && has_comment
-            && let Some(comment) = &todo.comment
-        {
-            for line in comment.lines() {
-                lines.push(ratatui::text::Line::from(vec![
-                    Span::raw("         "),
-                    Span::raw(line),
-                ]));
+
+        // For expanded items, append additional lines using expanded_text()
+        if todo.expanded {
+            let expanded_text = todo.expanded_text();
+            for (i, line) in expanded_text.lines.iter().enumerate() {
+                if i == 0 {
+                    continue; // skip first line, we already built it with cursor/checkbox
+                }
+                lines.push(line.clone());
             }
         }
 
