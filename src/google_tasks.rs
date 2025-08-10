@@ -1,7 +1,7 @@
 use chrono::Utc;
 use log::info;
 
-use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
+use crate::config::{GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME, GOOGLE_OAUTH_CLIENT_SECRET};
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -91,21 +91,20 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
-        let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
+        let use_secret = !GOOGLE_OAUTH_CLIENT_SECRET.is_empty();
 
-        let params = if let Some(secret) = &client_secret {
+        let params = if use_secret {
             info!(
-                "Using client_secret from JUGGLER_CLIENT_SECRET environment variable for token refresh"
+                "Using embedded client_secret for token refresh (desktop/native client)"
             );
             vec![
                 ("client_id", self.credentials.client_id.as_str()),
                 ("refresh_token", self.credentials.refresh_token.as_str()),
                 ("grant_type", "refresh_token"),
-                ("client_secret", secret.as_str()),
+                ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
             ]
         } else {
-            info!("No client_secret - using public client token refresh");
+            info!("No client_secret configured - using public client token refresh");
             vec![
                 ("client_id", self.credentials.client_id.as_str()),
                 ("refresh_token", self.credentials.refresh_token.as_str()),

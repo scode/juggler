@@ -92,7 +92,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Always keep atomic writes + archival semantics intact (tempfile, rename, timestamped backup).
 - Do not log secrets or full tokens; prefer `--dry-run` for previews.
 - Preserve cross-platform behavior; Unix-only permissions are guarded appropriately.
-- OAuth client id is public; do not require a client secret. Optional `JUGGLER_CLIENT_SECRET` may be honored by code paths—verify before use.
+- OAuth client id is public; for native desktop clients, the client secret is not confidential and may be embedded (see `GOOGLE_OAUTH_CLIENT_SECRET`). The app will use it if provided in code, or fall back to PKCE without it.
 
 ### Contribution checklist
 - Build, test, format, lint:
