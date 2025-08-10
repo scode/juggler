@@ -4,6 +4,7 @@ Always keep this file updated when you change the codebase:
 - Fix anything incorrect or outdated here as part of your edit.
 - For major changes, add or expand sections to capture the new architecture and behavior.
 - Ensure commands, invariants, data model, and workflows remain accurate.
+- Always run `cargo fmt` after every edit before you run tests or open a PR.
 
 ## Agent Guide: juggler
 
@@ -49,7 +50,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 ### Data model and storage
 - File: `~/.juggler/TODOs.yaml`
 - Permissions: user-only on Unix; created automatically
-- Atomic updates with temp files; archives previous file to `TODOs_YYYY-MM-DDTHH-MM-SS.yaml`
+- Atomic updates with temp files; archives previous file to `TODOs_YYYY-MM-DDTHHhMMmSSs.yaml`
 - YAML schema (serde):
   - `title: string`
   - `comment: string | null` (multiline supported)

@@ -320,8 +320,10 @@ impl<T: TodoEditor> App<T> {
         first_line_spans.push(Span::raw(checkbox));
 
         if is_selected {
-            first_line_spans
-                .push(Span::styled(&todo.title, Style::default().add_modifier(Modifier::BOLD)));
+            first_line_spans.push(Span::styled(
+                &todo.title,
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
         } else {
             first_line_spans.push(Span::raw(&todo.title));
         }
