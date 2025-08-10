@@ -5,7 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
@@ -53,40 +53,6 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn collapsed_summary(&self) -> Vec<Span<'_>> {
-        let mut spans = Vec::new();
-
-        // Add relative time if due date exists
-        if let Some(relative_time) = self.format_relative_time() {
-            let color = match self.due_date_urgency() {
-                Some(DueDateUrgency::Overdue) => Color::Red,
-                Some(DueDateUrgency::DueSoon) => Color::Yellow,
-                _ => Color::White,
-            };
-            spans.push(Span::styled(
-                format!("{relative_time} "),
-                Style::default().fg(color),
-            ));
-        }
-
-        spans.push(Span::raw(&self.title));
-        if self.has_comment() {
-            if self.expanded {
-                spans.push(Span::raw(" >>>"));
-            } else {
-                spans.push(Span::raw(" >"));
-            }
-        }
-        spans
-    }
-
-    pub fn has_comment(&self) -> bool {
-        self.comment
-            .as_ref()
-            .map(|c| !c.trim().is_empty())
-            .unwrap_or(false)
-    }
-
     pub fn expanded_text(&self) -> Text<'_> {
         let mut spans = Vec::new();
 
@@ -109,14 +75,14 @@ impl Todo {
         }
 
         // If expanded, show the comment content
-        if self.expanded {
-            if let Some(comment) = &self.comment {
-                spans.push(Span::raw("\n"));
-                spans.push(Span::raw(comment));
-            }
+        if self.expanded
+            && let Some(comment) = &self.comment
+        {
+            spans.push(Span::raw("\n"));
+            spans.push(Span::raw(comment));
         }
 
-        Text::from(spans)
+        Text::from(ratatui::text::Line::from(spans))
     }
 
     pub fn format_relative_time(&self) -> Option<String> {
@@ -309,14 +275,14 @@ impl<T: TodoEditor> App<T> {
             spans.push(Span::raw(&todo.title));
         }
 
-        if todo.expanded {
-            if let Some(comment) = &todo.comment {
-                spans.push(Span::raw("\n"));
-                spans.push(Span::raw(comment));
-            }
+        if todo.expanded
+            && let Some(comment) = &todo.comment
+        {
+            spans.push(Span::raw("\n"));
+            spans.push(Span::raw(comment));
         }
 
-        Text::from(spans)
+        Text::from(ratatui::text::Line::from(spans))
     }
 
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
