@@ -254,29 +254,13 @@ async fn exchange_code_for_tokens(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
-    let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
-
-    let params = if let Some(secret) = &client_secret {
-        info!("Using client_secret from JUGGLER_CLIENT_SECRET environment variable");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-            ("client_secret", secret),
-        ]
-    } else {
-        info!("No client_secret - using PKCE public client flow");
-        vec![
-            ("client_id", client_id),
-            ("code", auth_code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ]
-    };
+    let params = vec![
+        ("client_id", client_id),
+        ("code", auth_code),
+        ("grant_type", "authorization_code"),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", code_verifier),
+    ];
 
     // Debug log the parameters being sent (excluding sensitive data)
     info!("Token exchange parameters:");
@@ -285,9 +269,6 @@ async fn exchange_code_for_tokens(
     info!("  redirect_uri: {redirect_uri}");
     info!("  code_verifier: [PRESENT - {} chars]", code_verifier.len());
     info!("  code: [PRESENT - {} chars]", auth_code.len());
-    if client_secret.is_some() {
-        info!("  client_secret: [PRESENT - from environment variable]");
-    }
 
     let response = client
         .post(GOOGLE_OAUTH_TOKEN_URL)
@@ -296,8 +277,15 @@ async fn exchange_code_for_tokens(
         .await?;
 
     if !response.status().is_success() {
+        let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("Token exchange failed: {error_text}").into());
+        // Provide actionable guidance for common misconfiguration
+        let guidance = "If this mentions invalid_client or unauthorized_client due to a missing client_secret, your refresh code was issued to a confidential Web client. Re-run: `juggler login` to obtain a new refresh token bound to the desktop client (PKCE), which does not require a client secret.";
+        return Err(format!(
+            "Token exchange failed ({}): {}\n{}",
+            status, error_text, guidance
+        )
+        .into());
     }
 
     let token_response: serde_json::Value = response.json().await?;

@@ -92,35 +92,21 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         let token_url = &self.oauth_token_url;
 
-        // Check for JUGGLER_CLIENT_SECRET environment variable as a workaround
-        let client_secret = std::env::var("JUGGLER_CLIENT_SECRET").ok();
-
-        let params = if let Some(secret) = &client_secret {
-            info!(
-                "Using client_secret from JUGGLER_CLIENT_SECRET environment variable for token refresh"
-            );
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-                ("client_secret", secret.as_str()),
-            ]
-        } else {
-            info!("No client_secret - using public client token refresh");
-            vec![
-                ("client_id", self.credentials.client_id.as_str()),
-                ("refresh_token", self.credentials.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-            ]
-        };
+        let params = vec![
+            ("client_id", self.credentials.client_id.as_str()),
+            ("refresh_token", self.credentials.refresh_token.as_str()),
+            ("grant_type", "refresh_token"),
+        ];
 
         let response = self.client.post(token_url).form(&params).send().await?;
 
         if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let guidance = "If this mentions invalid_client or unauthorized_client due to missing client_secret, your refresh token belongs to a confidential Web client. Re-run `juggler login` to obtain a new refresh token issued to the desktop (PKCE) client, which does not require a client secret.";
             return Err(format!(
-                "OAuth token refresh failed with status {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
+                "OAuth token refresh failed with status {}: {}\n{}",
+                status, body, guidance
             )
             .into());
         }
