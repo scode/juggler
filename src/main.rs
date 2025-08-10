@@ -11,7 +11,7 @@ mod store;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use config::{get_oauth_client_id, get_todos_file_path};
+use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
 use google_tasks::{
     GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks, sync_to_tasks_with_oauth,
 };
@@ -23,13 +23,6 @@ use ui::{App, ExternalEditor};
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
 struct Cli {
-    #[arg(
-        long,
-        global = true,
-        env = "JUGGLER_CLIENT_ID",
-        help = "Override OAuth client id (defaults to built-in desktop client id)"
-    )]
-    client_id: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -74,8 +67,7 @@ async fn main() -> io::Result<()> {
         Some(Commands::Login { port }) => {
             // OAuth browser login flow
             info!("Starting OAuth login flow...");
-            let client_id = cli.client_id.unwrap_or_else(get_oauth_client_id);
-            match run_oauth_flow(client_id, port).await {
+            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
                     println!("\nYou can now sync your TODOs with Google Tasks using:");
@@ -128,10 +120,7 @@ async fn main() -> io::Result<()> {
                         // OAuth refresh token authentication
                         (None, Some(refresh_token)) => {
                             info!("Using OAuth refresh token authentication");
-                            let credentials = GoogleOAuthCredentials {
-                                client_id: cli.client_id.unwrap_or_else(get_oauth_client_id),
-                                refresh_token,
-                            };
+                            let credentials = GoogleOAuthCredentials { client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(), refresh_token };
                             let oauth_client = GoogleOAuthClient::new(credentials);
 
                             if let Err(e) =

@@ -280,13 +280,7 @@ async fn exchange_code_for_tokens(
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        // Provide actionable guidance for common misconfiguration
-        let guidance = "Google returned client_secret is missing. This usually means the client id is treated as a Web (confidential) client. Use a Desktop (Installed app) client id with PKCE. Re-run `juggler login` (optionally with `--client-id <DESKTOP_CLIENT_ID>` or env `JUGGLER_CLIENT_ID`) to obtain a refresh token bound to a desktop client which does not require a client secret.";
-        return Err(format!(
-            "Token exchange failed ({}): {}\n{}",
-            status, error_text, guidance
-        )
-        .into());
+        return Err(format!("Token exchange failed ({}): {}", status, error_text).into());
     }
 
     let token_response: serde_json::Value = response.json().await?;

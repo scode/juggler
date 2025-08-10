@@ -91,7 +91,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Always keep atomic writes + archival semantics intact (tempfile, rename, timestamped backup).
 - Do not log secrets or full tokens; prefer `--dry-run` for previews.
 - Preserve cross-platform behavior; Unix-only permissions are guarded appropriately.
-- OAuth client id is public; do not use a client secret. PKCE-only public client; remove any secret usage.
+- PKCE-only public client; remove any secret usage.
 
 ### Contribution checklist
 - Build, test, format, lint:

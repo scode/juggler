@@ -62,7 +62,6 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list with "j:" prefix
 - **ID tracking**: `google_task_id` field links local items to remote tasks
 - **Built-in OAuth client**: Uses hardcoded public client ID for seamless authentication
-- **Environment variables**: No client secret required; PKCE public client flow only
 
 ## Data Format and Storage
 
