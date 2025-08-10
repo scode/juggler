@@ -57,7 +57,7 @@ pub struct Todo {
 impl Todo {
     #[cfg(test)]
     pub fn expanded_text(&self) -> Text<'_> {
-        let mut spans = Vec::new();
+        let mut first_line_spans = Vec::new();
 
         // Add relative time if due date exists
         if let Some(relative_time) = self.format_relative_time() {
@@ -66,26 +66,35 @@ impl Todo {
                 Some(DueDateUrgency::DueSoon) => Color::Yellow,
                 _ => Color::White,
             };
-            spans.push(Span::styled(
+            first_line_spans.push(Span::styled(
                 format!("{relative_time} "),
                 Style::default().fg(color),
             ));
         }
 
-        spans.push(Span::raw(&self.title));
-        if self.has_comment() {
-            spans.push(Span::raw(" >>>"));
+        first_line_spans.push(Span::raw(&self.title));
+        let has_comment = self
+            .comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false);
+        if has_comment {
+            first_line_spans.push(Span::raw(" >>>"));
         }
 
-        // If expanded, show the comment content
-        if self.expanded
-            && let Some(comment) = &self.comment
-        {
-            spans.push(Span::raw("\n"));
-            spans.push(Span::raw(comment));
+        let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
+        if self.expanded && has_comment {
+            if let Some(comment) = &self.comment {
+                for line in comment.lines() {
+                    lines.push(ratatui::text::Line::from(vec![
+                        Span::raw("         "),
+                        Span::raw(line),
+                    ]));
+                }
+            }
         }
 
-        Text::from(ratatui::text::Line::from(spans))
+        Text::from(lines)
     }
 
     #[cfg(test)]
@@ -302,28 +311,43 @@ impl<T: TodoEditor> App<T> {
     fn display_text_internal(&self, index: usize) -> Text<'_> {
         let todo = &self.items[index];
         let is_selected = Some(index) == self.get_selected_item_index();
-        let mut spans = Vec::new();
 
-        let checkbox = if todo.done { "[x]" } else { "[ ]" };
-        spans.push(Span::raw(format!("{checkbox} ")));
+        let cursor_prefix = if is_selected { "▶ " } else { "  " };
+        let checkbox = if todo.done { "[x] " } else { "[ ] " };
+
+        let mut first_line_spans = Vec::new();
+        first_line_spans.push(Span::raw(cursor_prefix));
+        first_line_spans.push(Span::raw(checkbox));
 
         if is_selected {
-            spans.push(Span::styled(
-                &todo.title,
-                Style::default().add_modifier(Modifier::BOLD),
-            ));
+            first_line_spans
+                .push(Span::styled(&todo.title, Style::default().add_modifier(Modifier::BOLD)));
         } else {
-            spans.push(Span::raw(&todo.title));
+            first_line_spans.push(Span::raw(&todo.title));
         }
 
-        if todo.expanded
-            && let Some(comment) = &todo.comment
-        {
-            spans.push(Span::raw("\n"));
-            spans.push(Span::raw(comment));
+        let has_comment = todo
+            .comment
+            .as_ref()
+            .map(|c| !c.trim().is_empty())
+            .unwrap_or(false);
+        if todo.expanded && has_comment {
+            first_line_spans.push(Span::raw(" >>>"));
         }
 
-        Text::from(ratatui::text::Line::from(spans))
+        let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
+        if todo.expanded && has_comment {
+            if let Some(comment) = &todo.comment {
+                for line in comment.lines() {
+                    lines.push(ratatui::text::Line::from(vec![
+                        Span::raw("         "),
+                        Span::raw(line),
+                    ]));
+                }
+            }
+        }
+
+        Text::from(lines)
     }
 
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
