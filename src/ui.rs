@@ -314,7 +314,6 @@ impl<T: TodoEditor> App<T> {
         let is_selected = Some(index) == self.get_selected_item_index();
 
         let cursor_prefix = if is_selected { "▶ " } else { "  " };
-        // Selection indicator uses 'x' exclusively for selection state
         let selection_box = if todo.selected { "[x] " } else { "[ ] " };
         // Done indicator uses a check mark and never 'x'
         let done_box = if todo.done { "[✓] " } else { "[ ] " };
