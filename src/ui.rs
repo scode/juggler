@@ -919,6 +919,56 @@ mod tests {
     }
 
     #[test]
+    fn display_text_shows_relative_time_for_future_due_date() {
+        let items = vec![Todo {
+            title: String::from("future task"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(chrono::Utc::now() + chrono::Duration::hours(50)),
+            google_task_id: None,
+        }];
+        let app = App::new(items, NoOpEditor);
+
+        // 50h in the future should render as right-aligned "  2d"
+        assert_eq!(
+            text_to_string(&app.display_text_internal(0)),
+            "▶ [ ]   2d future task"
+        );
+    }
+
+    #[test]
+    fn expanded_display_includes_relative_time_and_comment_lines() {
+        let items = vec![
+            Todo {
+                title: String::from("a"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            },
+            Todo {
+                title: String::from("b"),
+                comment: Some(String::from("c1\nc2")),
+                expanded: true,
+                done: false,
+                selected: false,
+                due_date: Some(chrono::Utc::now() + chrono::Duration::hours(50)),
+                google_task_id: None,
+            },
+        ];
+        let app = App::new(items, NoOpEditor);
+
+        assert_eq!(
+            text_to_string(&app.display_text_internal(1)),
+            "  [ ]   2d b >>>\n         c1\n         c2"
+        );
+    }
+
+    #[test]
     fn selection_indicator_shows_x_for_selected_items() {
         let items = vec![
             Todo {
