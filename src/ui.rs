@@ -435,10 +435,8 @@ impl<T: TodoEditor> App<T> {
                         self.create_new_item();
                     }
                     *terminal = ratatui::init();
-                } else if key_event.code == KEY_CUSTOM_DELAY {
-                    self.handle_custom_delay(terminal)?;
                 } else {
-                    self.handle_normal_mode_key(key_event);
+                    self.handle_normal_mode_key(key_event, terminal)?;
                 }
             }
             _ => {}
@@ -479,14 +477,21 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
-    fn handle_normal_mode_key(&mut self, key_event: KeyEvent) {
+    fn handle_normal_mode_key(
+        &mut self,
+        key_event: KeyEvent,
+        terminal: &mut DefaultTerminal,
+    ) -> io::Result<()> {
         if key_event.code == KEY_EDIT {
             self.edit_item();
         } else if key_event.code == KEY_CREATE {
             self.create_new_item();
+        } else if key_event.code == KEY_CUSTOM_DELAY {
+            self.handle_custom_delay(terminal)?;
         } else {
             self.handle_key_event_internal(key_event);
         }
+        Ok(())
     }
 
     fn handle_key_event_internal(&mut self, key_event: KeyEvent) {
