@@ -1,0 +1,12 @@
+{
+  "install": "bash -lc 'set -e; \\ 
+    if ! command -v rustup >/dev/null 2>&1; then \\ 
+      curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal; \\ 
+    fi; \\ 
+    source \"$HOME/.cargo/env\"; \\ 
+    rustup toolchain install stable; \\ 
+    rustup default stable; \\ 
+    rustup component add rustfmt clippy; \\ 
+    grep -qxF \"source \\\"$HOME/.cargo/env\\\"\" \"$HOME/.bashrc\" || echo \"source \\\"$HOME/.cargo/env\\\"\" >> \"$HOME/.bashrc\"; \\ 
+    grep -qxF \"source \\\"$HOME/.cargo/env\\\"\" \"$HOME/.profile\" || echo \"source \\\"$HOME/.cargo/env\\\"\" >> \"$HOME/.profile\"'"
+}
