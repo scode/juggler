@@ -168,10 +168,16 @@ pub enum DueDateUrgency {
     Normal,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, Copy)]
+enum PromptAction {
+    CustomDelay,
+}
+
+#[derive(Debug, Clone)]
 struct PromptOverlay {
     message: String,
     buffer: String,
+    action: PromptAction,
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +421,11 @@ impl<T: TodoEditor> App<T> {
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                // If a prompt overlay is active, handle keys in modal prompt mode
+                if self.prompt_overlay.is_some() {
+                    self.handle_prompt_key(key_event);
+                    return Ok(());
+                }
                 if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
                     && self.editor.needs_terminal_restoration()
                 {
@@ -435,6 +446,39 @@ impl<T: TodoEditor> App<T> {
             _ => {}
         };
         Ok(())
+    }
+
+    fn handle_prompt_key(&mut self, key_event: KeyEvent) {
+        use crossterm::event::KeyModifiers;
+        if let Some(overlay) = &mut self.prompt_overlay {
+            match key_event.code {
+                KeyCode::Enter => {
+                    let finished = overlay.buffer.clone();
+                    let action = overlay.action;
+                    self.prompt_overlay = None;
+                    match action {
+                        PromptAction::CustomDelay => {
+                            if let Some(duration) = parse_relative_duration(&finished) {
+                                self.delay_from_now(duration);
+                            }
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.prompt_overlay = None;
+                }
+                KeyCode::Char(c) => {
+                    let modifiers = key_event.modifiers;
+                    if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT {
+                        overlay.buffer.push(c);
+                    }
+                }
+                KeyCode::Backspace => {
+                    overlay.buffer.pop();
+                }
+                _ => {}
+            }
+        }
     }
 
     fn handle_key_event_internal(&mut self, key_event: KeyEvent) {
@@ -806,71 +850,29 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        if let Some(input) = self.prompt_input(terminal, "Delay (e.g., 5d, -2h, 30m, 45s): ")?
-            && let Some(duration) = parse_relative_duration(&input)
-        {
-            self.delay_from_now(duration);
-        }
+        let _ = terminal; // not used in modal approach
+        // Activate prompt; completion is handled in handle_prompt_key
+        self.prompt_input(
+            terminal,
+            "Delay (e.g., 5d, -2h, 30m, 45s): ",
+            PromptAction::CustomDelay,
+        )?;
         Ok(())
     }
 
     fn prompt_input(
         &mut self,
-        terminal: &mut DefaultTerminal,
+        _terminal: &mut DefaultTerminal,
         prompt: &str,
+        action: PromptAction,
     ) -> io::Result<Option<String>> {
-        use crossterm::event::{KeyEvent, KeyModifiers};
-
-        // Activate overlay
+        // Activate overlay; main loop will handle input and completion
         self.prompt_overlay = Some(PromptOverlay {
             message: prompt.to_string(),
             buffer: String::new(),
+            action,
         });
-
-        loop {
-            terminal.draw(|frame| self.draw_internal(frame))?;
-
-            match event::read()? {
-                Event::Key(KeyEvent {
-                    code: KeyCode::Enter,
-                    ..
-                }) => {
-                    let result = self
-                        .prompt_overlay
-                        .as_ref()
-                        .map(|p| p.buffer.clone())
-                        .unwrap_or_default();
-                    self.prompt_overlay = None;
-                    return Ok(Some(result));
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Esc, ..
-                }) => {
-                    self.prompt_overlay = None;
-                    return Ok(None);
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Char(c),
-                    modifiers,
-                    ..
-                }) => {
-                    if (modifiers.is_empty() || modifiers == KeyModifiers::SHIFT)
-                        && let Some(p) = self.prompt_overlay.as_mut()
-                    {
-                        p.buffer.push(c);
-                    }
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Backspace,
-                    ..
-                }) => {
-                    if let Some(p) = self.prompt_overlay.as_mut() {
-                        p.buffer.pop();
-                    }
-                }
-                _ => {}
-            }
-        }
+        Ok(None)
     }
 
     fn delay_from_now(&mut self, duration: Duration) {
