@@ -28,7 +28,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, q - quit";
+pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -40,6 +40,7 @@ pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
 pub const KEY_UNSNOOZE_DAY: KeyCode = KeyCode::Char('S');
 pub const KEY_POSTPONE_WEEK: KeyCode = KeyCode::Char('p');
+pub const KEY_PREPONE_WEEK: KeyCode = KeyCode::Char('P');
 pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
 
 #[derive(Debug, Clone)]
@@ -404,6 +405,7 @@ impl<T: TodoEditor> App<T> {
             KEY_SNOOZE_DAY => self.snooze_day(),
             KEY_UNSNOOZE_DAY => self.unsnooze_day(),
             KEY_POSTPONE_WEEK => self.snooze_week(),
+            KEY_PREPONE_WEEK => self.unsnooze_week(),
             KEY_CREATE => self.create_new_item(),
             _ => {}
         }
@@ -601,6 +603,10 @@ impl<T: TodoEditor> App<T> {
 
     fn snooze_week(&mut self) {
         self.snooze(Duration::days(7));
+    }
+
+    fn unsnooze_week(&mut self) {
+        self.snooze(Duration::days(-7));
     }
 
     fn edit_item(&mut self) {
@@ -1236,10 +1242,13 @@ mod tests {
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
         assert!(app.items[0].due_date.is_some());
 
-        // The due date should be in the future
-        let due_date = app.items[0].due_date.unwrap();
-        let now = Utc::now();
-        assert!(due_date > now);
+        // Test unsnooze day
+        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
+
+        // Test prepone week
+        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        assert!(app.items[0].due_date.is_some());
     }
 
     #[test]
@@ -1308,18 +1317,96 @@ mod tests {
         }];
         let mut app = App::new(items, NoOpEditor);
 
+        // Should set to current time + 1 day
         let before_snooze = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
         let after_snooze = Utc::now();
-
         let new_due_date = app.items[0].due_date.unwrap();
-
-        // Should be set to current time + 1 day
         let expected_min = before_snooze + Duration::days(1);
         let expected_max = after_snooze + Duration::days(1);
-
         assert!(new_due_date >= expected_min && new_due_date <= expected_max);
-        assert!(new_due_date > Utc::now()); // Should be in the future
+    }
+
+    #[test]
+    fn postpone_week_with_no_due_date_sets_future() {
+        let items = vec![Todo {
+            title: String::from("task without due date"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        let before = Utc::now();
+        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        let after = Utc::now();
+        let new_due_date = app.items[0].due_date.unwrap();
+        let expected_min = before + Duration::days(7);
+        let expected_max = after + Duration::days(7);
+        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+    }
+
+    #[test]
+    fn prepone_week_with_no_due_date_sets_past() {
+        let items = vec![Todo {
+            title: String::from("task without due date"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        let before = Utc::now();
+        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        let after = Utc::now();
+        let new_due_date = app.items[0].due_date.unwrap();
+        let expected_min = before - Duration::days(7);
+        let expected_max = after - Duration::days(7);
+        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+    }
+
+    #[test]
+    fn postpone_week_from_future_due_adds_7() {
+        let future_date = Utc::now() + Duration::days(3);
+        let items = vec![Todo {
+            title: String::from("task with future due"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(future_date),
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        let new_due_date = app.items[0].due_date.unwrap();
+        assert_eq!(new_due_date, future_date + Duration::days(7));
+    }
+
+    #[test]
+    fn prepone_week_from_future_due_subtracts_7() {
+        let future_date = Utc::now() + Duration::days(3);
+        let items = vec![Todo {
+            title: String::from("task with future due"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: Some(future_date),
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        let new_due_date = app.items[0].due_date.unwrap();
+        assert_eq!(new_due_date, future_date - Duration::days(7));
     }
 
     #[test]
