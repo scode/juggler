@@ -3,9 +3,10 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::config::{
-    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
+    GOOGLE_TASKS_SCOPE,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -18,7 +19,7 @@ use tokio::sync::oneshot;
 use url::Url;
 
 // Type alias to simplify complex type
-type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>>;
+type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>;
 
 // Note: Users must provide their own OAuth credentials from Google Cloud Console
 // This is required for security and compliance with Google's OAuth policies
@@ -216,7 +217,9 @@ async fn handle_callback(
 
     Response::builder()
         .status(StatusCode::BAD_REQUEST)
-        .body(http_body_util::Full::new("Missing authorization code".into()))
+        .body(http_body_util::Full::new(
+            "Missing authorization code".into(),
+        ))
         .unwrap()
 }
 
