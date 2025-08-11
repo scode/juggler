@@ -113,7 +113,7 @@ fn due_dates_equivalent(google_due: &Option<String>, todo_due: &Option<chrono::D
             if let Ok(gdt) = chrono::DateTime::parse_from_rfc3339(g) {
                 let g_utc = gdt.with_timezone(&Utc);
                 let diff = t.signed_duration_since(g_utc).num_seconds().abs();
-                return diff < Duration::hours(24).num_seconds();
+                return diff < Duration::minutes(1).num_seconds();
             }
             false
         }
