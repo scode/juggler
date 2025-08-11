@@ -872,9 +872,7 @@ impl<T: TodoEditor> App<T> {
         });
     }
 
-    // prompt_input inlined into handle_custom_delay; no longer needed
-
-    fn delay_from_now(&mut self, duration: Duration) {
+        fn delay_from_now(&mut self, duration: Duration) {
         let now = Utc::now();
         let target_due = now + duration;
 
