@@ -957,6 +957,7 @@ fn parse_relative_duration(input: &str) -> Option<Duration> {
     }
 }
 
+#[cfg(test)]
 fn format_duration_compact(duration: Duration) -> String {
     let total_seconds = duration.num_seconds();
     let abs_seconds = total_seconds.abs();
