@@ -12,7 +12,7 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 - **External Editor Integration**: Edit TODOs in your preferred editor (via `$EDITOR`)
 - **Google Tasks Sync**: One-way synchronization to Google Tasks (local YAML is authoritative)
 - **Completion Tracking**: Mark items as done/undone
-- **Snooze Functionality**: Postpone tasks by 1 day or 1 week
+- **Snooze/Prepone**: Quickly adjust due dates by ±1 day or ±7 days, plus custom delays
 
 ## Quick Start
 
@@ -60,9 +60,15 @@ cargo run
 - `x` - Select/deselect item
 - `e` - Toggle done status
 - `E` - Edit item in external editor
-- `s` - Snooze selected items by 1 day
-- `S` - Snooze selected items by 1 week
+- `c` - Create a new item
+- `s` - Snooze by 1 day
+- `S` - Unsnooze by 1 day
+- `p` - Snooze by 7 days
+- `P` - Prepone by 7 days
+- `t` - Custom delay (e.g., 5d, -2h, 30m, 45s)
 - `q` - Quit and save
+
+Note: Actions operate on all selected items. If no items are selected, they apply to the item under the cursor.
 
 ### Command Line Mode
 
@@ -308,7 +314,7 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 
 ## Data Format
 
-TODOs are stored in `TODOs.yaml` with the following structure:
+By default, TODOs are stored at `~/.juggler/TODOs.yaml`. Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.yaml`).
 
 ```yaml
 - title: "Buy groceries"
