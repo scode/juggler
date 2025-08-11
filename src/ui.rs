@@ -767,7 +767,7 @@ impl<T: TodoEditor> App<T> {
         if let Some(input) = self.prompt_input(terminal, "Delay (e.g., 5d, -2h, 30m, 45s): ")?
             && let Some(duration) = parse_relative_duration(&input)
         {
-            self.snooze(duration);
+            self.delay_from_now(duration);
         }
         Ok(())
     }
@@ -826,6 +826,31 @@ impl<T: TodoEditor> App<T> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn delay_from_now(&mut self, duration: Duration) {
+        let now = Utc::now();
+        let target_due = now + duration;
+
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    item.due_date = Some(target_due);
+                    item.selected = false;
+                }
+            }
+        } else if let Some(cursor_idx) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(cursor_idx)
+        {
+            item.due_date = Some(target_due);
         }
     }
 }
