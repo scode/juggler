@@ -184,6 +184,12 @@ pub enum DueDateUrgency {
     Normal,
 }
 
+#[derive(Debug, Default, Clone)]
+struct PromptOverlay {
+    message: String,
+    buffer: String,
+}
+
 #[derive(Debug)]
 pub struct App<T: TodoEditor> {
     exit: bool,
@@ -193,6 +199,7 @@ pub struct App<T: TodoEditor> {
     pending_index: usize,
     done_index: usize,
     editor: T,
+    prompt_overlay: Option<PromptOverlay>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -218,6 +225,7 @@ impl<T: TodoEditor> App<T> {
             pending_index: 0,
             done_index: 0,
             editor,
+            prompt_overlay: None,
         }
     }
 
@@ -302,8 +310,16 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
-        frame.render_widget(help_widget, help_area);
+        if let Some(prompt) = &self.prompt_overlay {
+            // Replace help area with prompt on a blank background
+            frame.render_widget(Clear, help_area);
+            let text = format!("{}{}", prompt.message, prompt.buffer);
+            frame.render_widget(Paragraph::new(text), help_area);
+        } else {
+            let help_widget =
+                Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+            frame.render_widget(help_widget, help_area);
+        }
     }
 
     fn display_text_internal(&self, index: usize) -> Text<'_> {
@@ -778,53 +794,53 @@ impl<T: TodoEditor> App<T> {
         prompt: &str,
     ) -> io::Result<Option<String>> {
         use crossterm::event::{KeyEvent, KeyModifiers};
-        use ratatui::layout::{Constraint, Direction, Layout};
 
-        let mut buffer = String::new();
+        // Activate overlay
+        self.prompt_overlay = Some(PromptOverlay {
+            message: prompt.to_string(),
+            buffer: String::new(),
+        });
 
         loop {
-            terminal.draw(|frame| {
-                // Draw the existing UI first
-                self.draw_internal(frame);
-
-                // Then overlay the input prompt in the help area, clearing it first
-                let area = frame.area();
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(1), Constraint::Length(2)])
-                    .split(area);
-                let help_area = chunks[1];
-
-                // Clear the help area so no previous help text or borders remain
-                frame.render_widget(Clear, help_area);
-
-                let text = format!("{}{}", prompt, buffer);
-                let widget = Paragraph::new(text);
-                frame.render_widget(widget, help_area);
-            })?;
+            terminal.draw(|frame| self.draw_internal(frame))?;
 
             match event::read()? {
                 Event::Key(KeyEvent {
                     code: KeyCode::Enter,
                     ..
-                }) => return Ok(Some(buffer)),
+                }) => {
+                    let result = self
+                        .prompt_overlay
+                        .as_ref()
+                        .map(|p| p.buffer.clone())
+                        .unwrap_or_default();
+                    self.prompt_overlay = None;
+                    return Ok(Some(result));
+                }
                 Event::Key(KeyEvent {
                     code: KeyCode::Esc, ..
-                }) => return Ok(None),
+                }) => {
+                    self.prompt_overlay = None;
+                    return Ok(None);
+                }
                 Event::Key(KeyEvent {
                     code: KeyCode::Char(c),
                     modifiers,
                     ..
                 }) => {
-                    if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT {
-                        buffer.push(c);
+                    if (modifiers.is_empty() || modifiers == KeyModifiers::SHIFT)
+                        && let Some(p) = self.prompt_overlay.as_mut()
+                    {
+                        p.buffer.push(c);
                     }
                 }
                 Event::Key(KeyEvent {
                     code: KeyCode::Backspace,
                     ..
                 }) => {
-                    buffer.pop();
+                    if let Some(p) = self.prompt_overlay.as_mut() {
+                        p.buffer.pop();
+                    }
                 }
                 _ => {}
             }
