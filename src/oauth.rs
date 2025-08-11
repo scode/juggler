@@ -3,10 +3,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::config::{
-    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
-    GOOGLE_TASKS_SCOPE,
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -19,7 +18,7 @@ use tokio::sync::oneshot;
 use url::Url;
 
 // Type alias to simplify complex type
-type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>;
+type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>>;
 
 // Note: Users must provide their own OAuth credentials from Google Cloud Console
 // This is required for security and compliance with Google's OAuth policies
@@ -31,10 +30,6 @@ pub struct OAuthResult {
 
 #[derive(Debug)]
 struct OAuthState {
-    #[allow(dead_code)]
-    code_verifier: String,
-    #[allow(dead_code)]
-    client_id: String,
     tx: OAuthSender,
 }
 
@@ -75,8 +70,6 @@ pub async fn run_oauth_flow(
     let (tx, rx) = oneshot::channel();
 
     let oauth_state = Arc::new(OAuthState {
-        code_verifier: code_verifier.clone(),
-        client_id: client_id.clone(),
         tx: Arc::new(Mutex::new(Some(tx))),
     });
 
@@ -190,8 +183,10 @@ async fn handle_callback(
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
-                format!("<html><body><h1>Authentication Failed</h1><p>Error: {error_description}</p></body></html>")
-                    .into(),
+                format!(
+                    "<html><body><h1>Authentication Failed</h1><p>Error: {error_description}</p></body></html>"
+                )
+                .into(),
             ))
             .unwrap();
     }
@@ -203,34 +198,26 @@ async fn handle_callback(
             let _ = tx.send(Ok(code.clone()));
         }
 
-        Response::builder()
+        return Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
-                r#"<html><body>
-                    <h1>Authentication Successful!</h1>
-                    <p>You have successfully authenticated with Google Tasks.</p>
-                    <p>You can now close this window and return to your terminal.</p>
-                    <script>window.close();</script>
-                </body></html>"#
+                "<html><body><h1>Authentication Successful</h1><p>You can close this window.</p></body></html>"
                     .into(),
             ))
-            .unwrap()
-    } else {
-        if let Ok(mut tx_guard) = oauth_state.tx.lock()
-            && let Some(tx) = tx_guard.take()
-        {
-            let _ = tx.send(Err("Missing authorization code".to_string()));
-        }
-
-        Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .header("Content-Type", "text/html")
-            .body(http_body_util::Full::new(
-                "<html><body><h1>Authentication Failed</h1><p>Missing authorization code</p></body></html>".into(),
-            ))
-            .unwrap()
+            .unwrap();
     }
+
+    if let Ok(mut tx_guard) = oauth_state.tx.lock()
+        && let Some(tx) = tx_guard.take()
+    {
+        let _ = tx.send(Err("Missing authorization code".to_string()));
+    }
+
+    Response::builder()
+        .status(StatusCode::BAD_REQUEST)
+        .body(http_body_util::Full::new("Missing authorization code".into()))
+        .unwrap()
 }
 
 fn build_auth_url(client_id: &str, redirect_uri: &str, code_challenge: &str) -> String {
