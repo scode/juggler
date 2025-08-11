@@ -98,9 +98,18 @@ fn due_dates_same_day_utc(google_due: &Option<String>, todo_due: &Option<chrono:
     }
 }
 
-// Imprecise equality: treat as equal if they fall on the same UTC calendar day
-// OR if the absolute time difference is less than 24 hours. This accommodates
-// Google returning midnight while local tasks might have intra-day times.
+/// Imprecise due-date equivalence tailored to Google Tasks API semantics.
+///
+/// Google Tasks stores `due` as a date-only field; the time component is discarded
+/// when setting or reading via the public API. See the official docs:
+/// https://developers.google.com/workspace/tasks/reference/rest/v1/tasks (field `due`).
+/// The Google Tasks UI may display time-of-day, but that precision is not exposed
+/// through the public API. As a result, the API typically returns midnight UTC (00:00:00Z)
+/// for `due`, while local data may carry intra-day times.
+///
+/// This function treats two dues as "equivalent" if they fall on the same UTC calendar day
+/// OR if their absolute time difference is under one minute. The small tolerance accommodates
+/// minor formatting or conversion differences without masking real date changes.
 fn due_dates_equivalent(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
     use chrono::Duration;
     match (google_due, todo_due) {
