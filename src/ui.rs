@@ -6,7 +6,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Modifier, Style},
     text::{Span, Text},
-    widgets::{Block, Borders, List, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListState, Paragraph},
 };
 
 use crate::store::{TodoItem, edit_todo_item};
@@ -787,7 +787,7 @@ impl<T: TodoEditor> App<T> {
                 // Draw the existing UI first
                 self.draw_internal(frame);
 
-                // Then overlay the input prompt in the help area
+                // Then overlay the input prompt in the help area, clearing it first
                 let area = frame.area();
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -795,9 +795,11 @@ impl<T: TodoEditor> App<T> {
                     .split(area);
                 let help_area = chunks[1];
 
+                // Clear the help area so no previous help text or borders remain
+                frame.render_widget(Clear, help_area);
+
                 let text = format!("{}{}", prompt, buffer);
-                let widget = Paragraph::new(text)
-                    .block(Block::default().borders(Borders::TOP).title("Input"));
+                let widget = Paragraph::new(text);
                 frame.render_widget(widget, help_area);
             })?;
 
