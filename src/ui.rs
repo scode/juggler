@@ -487,7 +487,7 @@ impl<T: TodoEditor> App<T> {
         } else if key_event.code == KEY_CREATE {
             self.create_new_item();
         } else if key_event.code == KEY_CUSTOM_DELAY {
-            self.handle_custom_delay(terminal)?;
+            self.handle_custom_delay(terminal);
         } else {
             self.handle_key_event_internal(key_event);
         }
@@ -862,31 +862,17 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
-    fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        let _ = terminal; // not used in modal approach
-        // Activate prompt; completion is handled in handle_prompt_key
-        self.prompt_input(
-            terminal,
-            "Delay (e.g., 5d, -2h, 30m, 45s): ",
-            PromptAction::CustomDelay,
-        )?;
-        Ok(())
-    }
-
-    fn prompt_input(
-        &mut self,
-        _terminal: &mut DefaultTerminal,
-        prompt: &str,
-        action: PromptAction,
-    ) -> io::Result<Option<String>> {
+    fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) {
+        let _ = terminal; // unused
         // Activate overlay; main loop will handle input and completion
         self.prompt_overlay = Some(PromptOverlay {
-            message: prompt.to_string(),
+            message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
             buffer: String::new(),
-            action,
+            action: PromptAction::CustomDelay,
         });
-        Ok(None)
     }
+
+    // prompt_input inlined into handle_custom_delay; no longer needed
 
     fn delay_from_now(&mut self, duration: Duration) {
         let now = Utc::now();
