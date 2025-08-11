@@ -1857,6 +1857,60 @@ mod tests {
     }
 
     #[test]
+    fn prompt_widget_clears_area_and_renders_text() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        let area = Rect::new(0, 0, 20, 2);
+        let mut buf = Buffer::empty(area);
+
+        // Pre-fill buffer with non-space characters to ensure clearing works
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                buf[(x, y)].set_symbol("X");
+            }
+        }
+
+        // Render prompt
+        let message = "Prompt: ";
+        let input = "abc";
+        PromptWidget::new(message, input).render(area, &mut buf);
+
+        // Expect first line to contain message+input then spaces
+        let line0: String = (0..area.width)
+            .map(|x| buf[(x, area.y)].symbol())
+            .collect();
+        let expected_content = format!("{}{}", message, input);
+        let mut expected_line0 = expected_content.clone();
+        if expected_line0.len() < area.width as usize {
+            expected_line0.push_str(&" ".repeat(area.width as usize - expected_line0.len()));
+        } else {
+            expected_line0.truncate(area.width as usize);
+        }
+        assert_eq!(line0, expected_line0);
+
+        // Second line should be cleared to spaces
+        let line1: String = (0..area.width)
+            .map(|x| buf[(x, area.y + 1)].symbol())
+            .collect();
+        assert_eq!(line1, " ".repeat(area.width as usize));
+    }
+
+    #[test]
+    fn prompt_widget_truncates_to_width() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        let area = Rect::new(0, 0, 5, 1);
+        let mut buf = Buffer::empty(area);
+
+        PromptWidget::new("Hello", "World").render(area, &mut buf);
+
+        let line: String = (0..area.width)
+            .map(|x| buf[(x, area.y)].symbol())
+            .collect();
+        assert_eq!(line, "Hello");
+    }
+
+    #[test]
     fn parse_relative_duration_valid_inputs() {
         let cases = [
             ("0s", Duration::seconds(0)),
