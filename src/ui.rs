@@ -423,7 +423,7 @@ impl<T: TodoEditor> App<T> {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 if self.prompt_overlay.is_some() {
                     // Modal prompt handling when overlay is active
-                    self.handle_prompt_key(key_event);
+                    self.handle_prompt_mode_key(key_event);
                 } else if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
                     && self.editor.needs_terminal_restoration()
                 {
@@ -438,7 +438,7 @@ impl<T: TodoEditor> App<T> {
                 } else if key_event.code == KEY_CUSTOM_DELAY {
                     self.handle_custom_delay(terminal)?;
                 } else {
-                    self.handle_key_event_internal(key_event);
+                    self.handle_normal_mode_key(key_event);
                 }
             }
             _ => {}
@@ -446,7 +446,7 @@ impl<T: TodoEditor> App<T> {
         Ok(())
     }
 
-    fn handle_prompt_key(&mut self, key_event: KeyEvent) {
+    fn handle_prompt_mode_key(&mut self, key_event: KeyEvent) {
         use crossterm::event::KeyModifiers;
         if let Some(overlay) = &mut self.prompt_overlay {
             match key_event.code {
@@ -476,6 +476,16 @@ impl<T: TodoEditor> App<T> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn handle_normal_mode_key(&mut self, key_event: KeyEvent) {
+        if key_event.code == KEY_EDIT {
+            self.edit_item();
+        } else if key_event.code == KEY_CREATE {
+            self.create_new_item();
+        } else {
+            self.handle_key_event_internal(key_event);
         }
     }
 
