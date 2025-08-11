@@ -28,7 +28,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - snooze 7d, q - quit";
+pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -38,7 +38,8 @@ pub const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
 pub const KEY_EDIT: KeyCode = KeyCode::Char('E');
 pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
 pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
-pub const KEY_SNOOZE_WEEK: KeyCode = KeyCode::Char('S');
+pub const KEY_UNSNOOZE_DAY: KeyCode = KeyCode::Char('S');
+pub const KEY_POSTPONE_WEEK: KeyCode = KeyCode::Char('p');
 pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
 
 #[derive(Debug, Clone)]
@@ -401,7 +402,8 @@ impl<T: TodoEditor> App<T> {
             KEY_EDIT => self.edit_item(),
             KEY_TOGGLE_SELECT => self.toggle_select(),
             KEY_SNOOZE_DAY => self.snooze_day(),
-            KEY_SNOOZE_WEEK => self.snooze_week(),
+            KEY_UNSNOOZE_DAY => self.unsnooze_day(),
+            KEY_POSTPONE_WEEK => self.snooze_week(),
             KEY_CREATE => self.create_new_item(),
             _ => {}
         }
@@ -591,6 +593,10 @@ impl<T: TodoEditor> App<T> {
 
     fn snooze_day(&mut self) {
         self.snooze(Duration::days(1));
+    }
+
+    fn unsnooze_day(&mut self) {
+        self.snooze(Duration::days(-1));
     }
 
     fn snooze_week(&mut self) {
@@ -1074,7 +1080,8 @@ mod tests {
 
     #[test]
     fn draw_displays_help_text() {
-        let backend = TestBackend::new(100, 10);
+        let width = (HELP_TEXT.len() as u16).saturating_add(2);
+        let backend = TestBackend::new(width, 10);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = App::new(Vec::new(), NoOpEditor);
@@ -1225,8 +1232,8 @@ mod tests {
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
         assert!(app.items[0].due_date.is_some());
 
-        // Test snooze week
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_WEEK, KeyModifiers::NONE));
+        // Test snooze week (postpone)
+        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
         assert!(app.items[0].due_date.is_some());
 
         // The due date should be in the future
