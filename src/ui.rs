@@ -28,7 +28,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, q - quit";
+pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, t - custom delay, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -42,6 +42,7 @@ pub const KEY_UNSNOOZE_DAY: KeyCode = KeyCode::Char('S');
 pub const KEY_POSTPONE_WEEK: KeyCode = KeyCode::Char('p');
 pub const KEY_PREPONE_WEEK: KeyCode = KeyCode::Char('P');
 pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
+pub const KEY_CUSTOM_DELAY: KeyCode = KeyCode::Char('t');
 
 #[derive(Debug, Clone)]
 pub struct Todo {
@@ -383,6 +384,8 @@ impl<T: TodoEditor> App<T> {
                         self.create_new_item();
                     }
                     *terminal = ratatui::init();
+                } else if key_event.code == KEY_CUSTOM_DELAY {
+                    self.handle_custom_delay(terminal)?;
                 } else {
                     self.handle_key_event_internal(key_event);
                 }
@@ -758,6 +761,112 @@ impl<T: TodoEditor> App<T> {
         } else if self.done_index >= done_items.len() {
             self.done_index = done_items.len() - 1;
         }
+    }
+
+    fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        if let Some(input) = self.prompt_input(terminal, "Delay (e.g., 5d, -2h, 30m, 45s): ")?
+            && let Some(duration) = parse_relative_duration(&input)
+        {
+            self.snooze(duration);
+        }
+        Ok(())
+    }
+
+    fn prompt_input(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        prompt: &str,
+    ) -> io::Result<Option<String>> {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use ratatui::layout::{Constraint, Direction, Layout};
+
+        let mut buffer = String::new();
+
+        loop {
+            terminal.draw(|frame| {
+                // Draw the existing UI first
+                self.draw_internal(frame);
+
+                // Then overlay the input prompt in the help area
+                let area = frame.area();
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(1), Constraint::Length(2)])
+                    .split(area);
+                let help_area = chunks[1];
+
+                let text = format!("{}{}", prompt, buffer);
+                let widget = Paragraph::new(text)
+                    .block(Block::default().borders(Borders::TOP).title("Input"));
+                frame.render_widget(widget, help_area);
+            })?;
+
+            match event::read()? {
+                Event::Key(KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                }) => return Ok(Some(buffer)),
+                Event::Key(KeyEvent {
+                    code: KeyCode::Esc, ..
+                }) => return Ok(None),
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char(c),
+                    modifiers,
+                    ..
+                }) => {
+                    if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT {
+                        buffer.push(c);
+                    }
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Backspace,
+                    ..
+                }) => {
+                    buffer.pop();
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn parse_relative_duration(input: &str) -> Option<Duration> {
+    let s = input.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Extract optional sign
+    let (sign, rest) = match s.chars().next()? {
+        '+' => (1i64, &s[1..]),
+        '-' => (-1i64, &s[1..]),
+        _ => (1i64, s),
+    };
+
+    // Split numeric part and unit
+    let mut digits_end = 0usize;
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() {
+            digits_end += 1;
+        } else {
+            break;
+        }
+    }
+    if digits_end == 0 || digits_end >= rest.len() {
+        return None;
+    }
+    let number_str = &rest[..digits_end];
+    let unit_str = rest[digits_end..].trim();
+
+    let magnitude: i64 = number_str.parse().ok()?;
+    let signed = magnitude.saturating_mul(sign);
+
+    match unit_str {
+        "s" => Some(Duration::seconds(signed)),
+        "m" => Some(Duration::minutes(signed)),
+        "h" => Some(Duration::hours(signed)),
+        "d" => Some(Duration::days(signed)),
+        _ => None,
     }
 }
 
