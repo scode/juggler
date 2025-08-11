@@ -6,8 +6,9 @@ use ratatui::{
     DefaultTerminal, Frame,
     style::{Color, Modifier, Style},
     text::{Span, Text},
-    widgets::{Block, Borders, Clear, List, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListState, Paragraph},
 };
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 use crate::store::{TodoItem, edit_todo_item};
 
@@ -190,6 +191,50 @@ struct PromptOverlay {
     buffer: String,
 }
 
+#[derive(Debug, Clone)]
+struct PromptWidget {
+    text: String,
+}
+
+impl PromptWidget {
+    fn new(message: &str, buffer: &str) -> Self {
+        Self {
+            text: format!("{}{}", message, buffer),
+        }
+    }
+}
+
+impl Widget for PromptWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Clear the entire area to ensure a blank background
+        for y in area.y..area.y.saturating_add(area.height) {
+            for x in area.x..area.x.saturating_add(area.width) {
+                let cell = &mut buf[(x, y)];
+                cell.reset();
+                cell.set_symbol(" ");
+            }
+        }
+
+        // Render the prompt text on the first line of the area, truncated if necessary
+        let max_width = area.width as usize;
+        let content = if self.text.len() > max_width {
+            self.text.chars().take(max_width).collect::<String>()
+        } else {
+            self.text
+        };
+
+        // Write characters into the buffer
+        let mut x = area.x;
+        let y = area.y;
+        for ch in content.chars() {
+            let cell = &mut buf[(x, y)];
+            cell.set_symbol(ch.encode_utf8(&mut [0; 4]));
+            cell.set_style(Style::default());
+            x += 1;
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct App<T: TodoEditor> {
     exit: bool,
@@ -310,15 +355,14 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        if let Some(prompt) = &self.prompt_overlay {
-            // Replace help area with prompt on a blank background
-            frame.render_widget(Clear, help_area);
-            let text = format!("{}{}", prompt.message, prompt.buffer);
-            frame.render_widget(Paragraph::new(text), help_area);
-        } else {
-            let help_widget =
-                Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
-            frame.render_widget(help_widget, help_area);
+        // Render either prompt widget or help widget
+        match &self.prompt_overlay {
+            Some(prompt) => frame.render_widget(PromptWidget::new(&prompt.message, &prompt.buffer), help_area),
+            None => {
+                let help_widget =
+                    Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+                frame.render_widget(help_widget, help_area);
+            }
         }
     }
 
