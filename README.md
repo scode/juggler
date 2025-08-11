@@ -263,7 +263,6 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - **Google Tasks due time precision**: The Google Tasks API stores `due` as a date-only field. The time component is discarded when setting or reading via the public API. The UI may display a time, but that precision is not exposed through the public API. See the official docs: https://developers.google.com/workspace/tasks/reference/rest/v1/tasks (field `due`).
   - Impact in juggler during task syncing: We normalize outgoing due dates to midnight UTC (00:00:00Z) and compare by calendar day with a very small tolerance to avoid spurious updates.
 
-
 ## Security Notes
 
 - **Never commit OAuth credentials** to version control
