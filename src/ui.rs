@@ -420,12 +420,11 @@ impl<T: TodoEditor> App<T> {
 
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press && self.prompt_overlay.is_some() => {
+                // Modal prompt handling when overlay is active
+                self.handle_prompt_key(key_event);
+            }
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                // If a prompt overlay is active, handle keys in modal prompt mode
-                if self.prompt_overlay.is_some() {
-                    self.handle_prompt_key(key_event);
-                    return Ok(());
-                }
                 if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
                     && self.editor.needs_terminal_restoration()
                 {
