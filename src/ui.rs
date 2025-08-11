@@ -1911,6 +1911,45 @@ mod tests {
     }
 
     #[test]
+    fn prompt_mode_key_end_to_end_sets_due_from_now() {
+        use crossterm::event::KeyModifiers;
+
+        // App with a single pending item
+        let items = vec![Todo {
+            title: String::from("task 1"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        // Activate custom delay prompt
+        app.prompt_overlay = Some(super::PromptOverlay {
+            message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
+            buffer: String::new(),
+            action: super::PromptAction::CustomDelay,
+        });
+
+        // Type "1d" and press Enter
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+
+        let before = Utc::now();
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let after = Utc::now();
+
+        let due = app.items[0].due_date.expect("due date should be set");
+        let expected_min = before + Duration::days(1);
+        let expected_max = after + Duration::days(1);
+        assert!(due >= expected_min && due <= expected_max);
+        // Overlay should be cleared
+        assert!(app.prompt_overlay.is_none());
+    }
+
+    #[test]
     fn parse_relative_duration_valid_inputs() {
         let cases = [
             ("0s", Duration::seconds(0)),
