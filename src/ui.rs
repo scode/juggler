@@ -913,6 +913,27 @@ fn parse_relative_duration(input: &str) -> Option<Duration> {
     }
 }
 
+fn format_duration_compact(duration: Duration) -> String {
+    let total_seconds = duration.num_seconds();
+    let abs_seconds = total_seconds.abs();
+
+    let (value, unit) = if abs_seconds < 60 {
+        (abs_seconds, "s")
+    } else if abs_seconds < 3600 {
+        (abs_seconds / 60, "m")
+    } else if abs_seconds < 86400 {
+        (abs_seconds / 3600, "h")
+    } else {
+        (abs_seconds / 86400, "d")
+    };
+
+    if total_seconds < 0 {
+        format!("-{value}{unit}")
+    } else {
+        format!("{value}{unit}")
+    }
+}
+
 impl From<TodoItem> for Todo {
     fn from(item: TodoItem) -> Self {
         Todo {
@@ -1806,5 +1827,80 @@ mod tests {
         // Verify cursor positioned correctly
         assert_eq!(app.current_section, Section::Pending);
         assert_eq!(app.pending_index, 0);
+    }
+
+    #[test]
+    fn parse_relative_duration_valid_inputs() {
+        let cases = [
+            ("0s", Duration::seconds(0)),
+            ("5s", Duration::seconds(5)),
+            ("59s", Duration::seconds(59)),
+            ("1m", Duration::minutes(1)),
+            ("10m", Duration::minutes(10)),
+            ("59m", Duration::minutes(59)),
+            ("1h", Duration::hours(1)),
+            ("12h", Duration::hours(12)),
+            ("23h", Duration::hours(23)),
+            ("1d", Duration::days(1)),
+            ("10d", Duration::days(10)),
+            ("-5s", Duration::seconds(-5)),
+            ("-2m", Duration::minutes(-2)),
+            ("-3h", Duration::hours(-3)),
+            ("-4d", Duration::days(-4)),
+            ("  5d  ", Duration::days(5)), // surrounding whitespace
+            ("+7d", Duration::days(7)),    // explicit plus sign
+            ("5 m", Duration::minutes(5)), // space before unit
+        ];
+
+        for (input, expected) in cases { 
+            let got = parse_relative_duration(input).expect("should parse");
+            assert_eq!(got, expected, "input={input}");
+        }
+    }
+
+    #[test]
+    fn parse_relative_duration_invalid_inputs() {
+        let cases = [
+            "",
+            " ",
+            "s",
+            "d",
+            "+",
+            "-",
+            "+d",
+            "-h",
+            "5",
+            "d5",
+            "5x",
+            "5days",
+            "--5d",
+            "++5d",
+        ];
+
+        for input in cases { 
+            assert!(parse_relative_duration(input).is_none(), "input={input}");
+        }
+    }
+
+    #[test]
+    fn duration_compact_format_round_trip_for_canonical_strings() {
+        // Only include canonical strings that our formatter would produce
+        // (seconds <60, minutes <60, hours <24, days otherwise)
+        let canonical = [
+            "0s", "1s", "59s",
+            "1m", "2m", "59m",
+            "1h", "2h", "23h",
+            "1d", "2d", "10d",
+            "-1s", "-59s",
+            "-1m", "-59m",
+            "-1h", "-23h",
+            "-1d", "-10d",
+        ];
+
+        for s in canonical { 
+            let dur = parse_relative_duration(s).expect("parse canonical");
+            let back = format_duration_compact(dur);
+            assert_eq!(back, s, "round-trip failed for {s}");
+        }
     }
 }
