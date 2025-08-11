@@ -553,13 +553,24 @@ mod tests {
 
         // Same calendar day should be treated as equivalent (date-only semantics)
         let google_due_same_day = Some("2025-08-20T00:00:00Z".to_string());
-        let todo_due_same_day = Some(chrono::Utc.with_ymd_and_hms(2025, 8, 20, 23, 25, 14).unwrap());
-        assert!(due_dates_equivalent(&google_due_same_day, &todo_due_same_day));
+        let todo_due_same_day = Some(
+            chrono::Utc
+                .with_ymd_and_hms(2025, 8, 20, 23, 25, 14)
+                .unwrap(),
+        );
+        assert!(due_dates_equivalent(
+            &google_due_same_day,
+            &todo_due_same_day
+        ));
 
         // Across a calendar boundary but within 60 seconds should still be equivalent
         let google_due_just_before = Some("2025-08-20T23:59:40Z".to_string());
-        let todo_due_just_after = Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 0, 10).unwrap());
-        assert!(due_dates_equivalent(&google_due_just_before, &todo_due_just_after));
+        let todo_due_just_after =
+            Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 0, 10).unwrap());
+        assert!(due_dates_equivalent(
+            &google_due_just_before,
+            &todo_due_just_after
+        ));
 
         // Different days and beyond the 1-minute tolerance should NOT be equivalent
         let google_due_far = Some("2025-08-20T00:00:00Z".to_string());
