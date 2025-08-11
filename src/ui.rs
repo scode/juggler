@@ -355,7 +355,6 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        // Render either prompt widget or help widget
         match &self.prompt_overlay {
             Some(prompt) => frame.render_widget(PromptWidget::new(&prompt.message, &prompt.buffer), help_area),
             None => {
