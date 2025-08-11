@@ -1234,21 +1234,30 @@ mod tests {
         }];
         let mut app = App::new(items, NoOpEditor);
 
-        // Test snooze day
+        // snooze 1d when no due date -> now + 1d (range-checked)
+        let before1 = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        assert!(app.items[0].due_date.is_some());
+        let after1 = Utc::now();
+        let due1 = app.items[0].due_date.expect("due set after snooze day");
+        assert!(due1 >= before1 + Duration::days(1) && due1 <= after1 + Duration::days(1));
 
-        // Test snooze week (postpone)
+        // postpone 7d when due in future -> due + 7d (exact)
+        let prev = due1;
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        assert!(app.items[0].due_date.is_some());
+        let due2 = app.items[0].due_date.expect("due set after postpone week");
+        assert_eq!(due2, prev + Duration::days(7));
 
-        // Test unsnooze day
+        // unsnooze 1d when due in future -> due - 1d (exact)
+        let prev2 = due2;
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
-        assert!(app.items[0].due_date.is_some());
+        let due3 = app.items[0].due_date.expect("due set after unsnooze day");
+        assert_eq!(due3, prev2 - Duration::days(1));
 
-        // Test prepone week
+        // prepone 7d when due in future -> due - 7d (exact)
+        let prev3 = due3;
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        assert!(app.items[0].due_date.is_some());
+        let due4 = app.items[0].due_date.expect("due set after prepone week");
+        assert_eq!(due4, prev3 - Duration::days(7));
     }
 
     #[test]
