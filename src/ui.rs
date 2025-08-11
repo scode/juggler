@@ -424,17 +424,6 @@ impl<T: TodoEditor> App<T> {
                 if self.prompt_overlay.is_some() {
                     // Modal prompt handling when overlay is active
                     self.handle_prompt_mode_key(key_event);
-                } else if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
-                    && self.editor.needs_terminal_restoration()
-                {
-                    // Special handling for external editor - restore and reinitialize terminal
-                    ratatui::restore();
-                    if key_event.code == KEY_EDIT {
-                        self.edit_item();
-                    } else {
-                        self.create_new_item();
-                    }
-                    *terminal = ratatui::init();
                 } else {
                     self.handle_normal_mode_key(key_event, terminal)?;
                 }
@@ -482,7 +471,18 @@ impl<T: TodoEditor> App<T> {
         key_event: KeyEvent,
         terminal: &mut DefaultTerminal,
     ) -> io::Result<()> {
-        if key_event.code == KEY_EDIT {
+        if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
+            && self.editor.needs_terminal_restoration()
+        {
+            // Special handling for external editor - restore and reinitialize terminal
+            ratatui::restore();
+            if key_event.code == KEY_EDIT {
+                self.edit_item();
+            } else {
+                self.create_new_item();
+            }
+            *terminal = ratatui::init();
+        } else if key_event.code == KEY_EDIT {
             self.edit_item();
         } else if key_event.code == KEY_CREATE {
             self.create_new_item();
