@@ -2,7 +2,6 @@ use std::io;
 
 use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-#[cfg(test)]
 use ratatui::style::Color;
 use ratatui::{
     DefaultTerminal, Frame,
@@ -98,7 +97,6 @@ impl Todo {
         Text::from(lines)
     }
 
-    #[cfg(test)]
     pub fn format_relative_time(&self) -> Option<String> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -128,7 +126,6 @@ impl Todo {
         })
     }
 
-    #[cfg(test)]
     pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
         self.due_date.map(|due| {
             let now = Utc::now();
@@ -146,7 +143,6 @@ impl Todo {
         })
     }
 
-    #[cfg(test)]
     pub fn has_comment(&self) -> bool {
         self.comment
             .as_ref()
@@ -179,7 +175,6 @@ impl Todo {
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DueDateUrgency {
     Overdue,
@@ -326,6 +321,19 @@ impl<T: TodoEditor> App<T> {
         let mut first_line_spans = Vec::new();
         first_line_spans.push(Span::raw(cursor_prefix));
         first_line_spans.push(Span::raw(status_box));
+
+        // Add relative time if due date exists
+        if let Some(relative_time) = todo.format_relative_time() {
+            let color = match todo.due_date_urgency() {
+                Some(DueDateUrgency::Overdue) => Color::Red,
+                Some(DueDateUrgency::DueSoon) => Color::Yellow,
+                _ => Color::White,
+            };
+            first_line_spans.push(Span::styled(
+                format!("{relative_time} "),
+                Style::default().fg(color),
+            ));
+        }
 
         if is_selected {
             first_line_spans.push(Span::styled(
