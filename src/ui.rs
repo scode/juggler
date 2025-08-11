@@ -8,6 +8,7 @@ use ratatui::{
     text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 use crate::store::{TodoItem, edit_todo_item};
 
@@ -28,7 +29,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, q - quit";
+pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, t - custom delay, q - quit";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -42,6 +43,7 @@ pub const KEY_UNSNOOZE_DAY: KeyCode = KeyCode::Char('S');
 pub const KEY_POSTPONE_WEEK: KeyCode = KeyCode::Char('p');
 pub const KEY_PREPONE_WEEK: KeyCode = KeyCode::Char('P');
 pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
+pub const KEY_CUSTOM_DELAY: KeyCode = KeyCode::Char('t');
 
 #[derive(Debug, Clone)]
 pub struct Todo {
@@ -60,24 +62,7 @@ impl Todo {
             let now = Utc::now();
             let duration = due.signed_duration_since(now);
 
-            let total_seconds = duration.num_seconds();
-            let abs_seconds = total_seconds.abs();
-
-            let (value, unit) = if abs_seconds < 60 {
-                (abs_seconds, "s")
-            } else if abs_seconds < 3600 {
-                (abs_seconds / 60, "m")
-            } else if abs_seconds < 86400 {
-                (abs_seconds / 3600, "h")
-            } else {
-                (abs_seconds / 86400, "d")
-            };
-
-            let time_str = if total_seconds < 0 {
-                format!("-{value}{unit}")
-            } else {
-                format!("{value}{unit}")
-            };
+            let time_str = format_duration_compact(duration);
 
             // Right-pad to 4 characters for alignment
             format!("{time_str:>4}")
@@ -183,6 +168,62 @@ pub enum DueDateUrgency {
     Normal,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PromptAction {
+    CustomDelay,
+}
+
+#[derive(Debug, Clone)]
+struct PromptOverlay {
+    message: String,
+    buffer: String,
+    action: PromptAction,
+}
+
+#[derive(Debug, Clone)]
+struct PromptWidget {
+    text: String,
+}
+
+impl PromptWidget {
+    fn new(message: &str, buffer: &str) -> Self {
+        Self {
+            text: format!("{}{}", message, buffer),
+        }
+    }
+}
+
+impl Widget for PromptWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Clear the entire area to ensure a blank background
+        for y in area.y..area.y.saturating_add(area.height) {
+            for x in area.x..area.x.saturating_add(area.width) {
+                let cell = &mut buf[(x, y)];
+                cell.reset();
+                cell.set_symbol(" ");
+            }
+        }
+
+        // Render the prompt text on the first line of the area, truncated if necessary
+        let max_width = area.width as usize;
+        let content = if self.text.len() > max_width {
+            self.text.chars().take(max_width).collect::<String>()
+        } else {
+            self.text
+        };
+
+        // Write characters into the buffer
+        let mut x = area.x;
+        let y = area.y;
+        for ch in content.chars() {
+            let cell = &mut buf[(x, y)];
+            cell.set_symbol(ch.encode_utf8(&mut [0; 4]));
+            cell.set_style(Style::default());
+            x += 1;
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct App<T: TodoEditor> {
     exit: bool,
@@ -192,6 +233,7 @@ pub struct App<T: TodoEditor> {
     pending_index: usize,
     done_index: usize,
     editor: T,
+    prompt_overlay: Option<PromptOverlay>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -217,6 +259,7 @@ impl<T: TodoEditor> App<T> {
             pending_index: 0,
             done_index: 0,
             editor,
+            prompt_overlay: None,
         }
     }
 
@@ -301,8 +344,17 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        let help_widget = Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
-        frame.render_widget(help_widget, help_area);
+        match &self.prompt_overlay {
+            Some(prompt) => frame.render_widget(
+                PromptWidget::new(&prompt.message, &prompt.buffer),
+                help_area,
+            ),
+            None => {
+                let help_widget =
+                    Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+                frame.render_widget(help_widget, help_area);
+            }
+        }
     }
 
     fn display_text_internal(&self, index: usize) -> Text<'_> {
@@ -372,23 +424,76 @@ impl<T: TodoEditor> App<T> {
     fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
-                    && self.editor.needs_terminal_restoration()
-                {
-                    // Special handling for external editor - restore and reinitialize terminal
-                    ratatui::restore();
-                    if key_event.code == KEY_EDIT {
-                        self.edit_item();
-                    } else {
-                        self.create_new_item();
-                    }
-                    *terminal = ratatui::init();
+                if self.prompt_overlay.is_some() {
+                    // Modal prompt handling when overlay is active
+                    self.handle_prompt_mode_key(key_event);
                 } else {
-                    self.handle_key_event_internal(key_event);
+                    self.handle_normal_mode_key(key_event, terminal)?;
                 }
             }
             _ => {}
         };
+        Ok(())
+    }
+
+    fn handle_prompt_mode_key(&mut self, key_event: KeyEvent) {
+        use crossterm::event::KeyModifiers;
+        if let Some(overlay) = &mut self.prompt_overlay {
+            match key_event.code {
+                KeyCode::Enter => {
+                    let finished = overlay.buffer.clone();
+                    let action = overlay.action;
+                    self.prompt_overlay = None;
+                    match action {
+                        PromptAction::CustomDelay => {
+                            if let Some(duration) = parse_relative_duration(&finished) {
+                                self.delay_from_now(duration);
+                            }
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.prompt_overlay = None;
+                }
+                KeyCode::Char(c) => {
+                    let modifiers = key_event.modifiers;
+                    if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT {
+                        overlay.buffer.push(c);
+                    }
+                }
+                KeyCode::Backspace => {
+                    overlay.buffer.pop();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn handle_normal_mode_key(
+        &mut self,
+        key_event: KeyEvent,
+        terminal: &mut DefaultTerminal,
+    ) -> io::Result<()> {
+        if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
+            && self.editor.needs_terminal_restoration()
+        {
+            // Special handling for external editor - restore and reinitialize terminal
+            ratatui::restore();
+            if key_event.code == KEY_EDIT {
+                self.edit_item();
+            } else {
+                self.create_new_item();
+            }
+            *terminal = ratatui::init();
+        } else if key_event.code == KEY_EDIT {
+            self.edit_item();
+        } else if key_event.code == KEY_CREATE {
+            self.create_new_item();
+        } else if key_event.code == KEY_CUSTOM_DELAY {
+            self.handle_custom_delay(terminal);
+        } else {
+            self.handle_key_event_internal(key_event);
+        }
         Ok(())
     }
 
@@ -758,6 +863,102 @@ impl<T: TodoEditor> App<T> {
         } else if self.done_index >= done_items.len() {
             self.done_index = done_items.len() - 1;
         }
+    }
+
+    fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) {
+        let _ = terminal; // unused
+        // Activate overlay; main loop will handle input and completion
+        self.prompt_overlay = Some(PromptOverlay {
+            message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
+            buffer: String::new(),
+            action: PromptAction::CustomDelay,
+        });
+    }
+
+    fn delay_from_now(&mut self, duration: Duration) {
+        let now = Utc::now();
+        let target_due = now + duration;
+
+        let selected_indices: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+
+        if !selected_indices.is_empty() {
+            for i in selected_indices {
+                if let Some(item) = self.items.get_mut(i) {
+                    item.due_date = Some(target_due);
+                    item.selected = false;
+                }
+            }
+        } else if let Some(cursor_idx) = self.get_selected_item_index()
+            && let Some(item) = self.items.get_mut(cursor_idx)
+        {
+            item.due_date = Some(target_due);
+        }
+    }
+}
+
+fn parse_relative_duration(input: &str) -> Option<Duration> {
+    let s = input.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Extract optional sign
+    let (sign, rest) = match s.chars().next()? {
+        '+' => (1i64, &s[1..]),
+        '-' => (-1i64, &s[1..]),
+        _ => (1i64, s),
+    };
+
+    // Split numeric part and unit
+    let mut digits_end = 0usize;
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() {
+            digits_end += 1;
+        } else {
+            break;
+        }
+    }
+    if digits_end == 0 || digits_end >= rest.len() {
+        return None;
+    }
+    let number_str = &rest[..digits_end];
+    let unit_str = rest[digits_end..].trim();
+
+    let magnitude: i64 = number_str.parse().ok()?;
+    let signed = magnitude.saturating_mul(sign);
+
+    match unit_str {
+        "s" => Some(Duration::seconds(signed)),
+        "m" => Some(Duration::minutes(signed)),
+        "h" => Some(Duration::hours(signed)),
+        "d" => Some(Duration::days(signed)),
+        _ => None,
+    }
+}
+
+fn format_duration_compact(duration: Duration) -> String {
+    let total_seconds = duration.num_seconds();
+    let abs_seconds = total_seconds.abs();
+
+    let (value, unit) = if abs_seconds < 60 {
+        (abs_seconds, "s")
+    } else if abs_seconds < 3600 {
+        (abs_seconds / 60, "m")
+    } else if abs_seconds < 86400 {
+        (abs_seconds / 3600, "h")
+    } else {
+        (abs_seconds / 86400, "d")
+    };
+
+    if total_seconds < 0 {
+        format!("-{value}{unit}")
+    } else {
+        format!("{value}{unit}")
     }
 }
 
@@ -1654,5 +1855,150 @@ mod tests {
         // Verify cursor positioned correctly
         assert_eq!(app.current_section, Section::Pending);
         assert_eq!(app.pending_index, 0);
+    }
+
+    #[test]
+    fn prompt_widget_clears_area_and_renders_text() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        let area = Rect::new(0, 0, 20, 2);
+        let mut buf = Buffer::empty(area);
+
+        // Pre-fill buffer with non-space characters to ensure clearing works
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                buf[(x, y)].set_symbol("X");
+            }
+        }
+
+        // Render prompt
+        let message = "Prompt: ";
+        let input = "abc";
+        PromptWidget::new(message, input).render(area, &mut buf);
+
+        // Expect first line to contain message+input then spaces
+        let line0: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
+        let expected_content = format!("{}{}", message, input);
+        let mut expected_line0 = expected_content.clone();
+        if expected_line0.len() < area.width as usize {
+            expected_line0.push_str(&" ".repeat(area.width as usize - expected_line0.len()));
+        } else {
+            expected_line0.truncate(area.width as usize);
+        }
+        assert_eq!(line0, expected_line0);
+
+        // Second line should be cleared to spaces
+        let line1: String = (0..area.width)
+            .map(|x| buf[(x, area.y + 1)].symbol())
+            .collect();
+        assert_eq!(line1, " ".repeat(area.width as usize));
+    }
+
+    #[test]
+    fn prompt_widget_truncates_to_width() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        let area = Rect::new(0, 0, 5, 1);
+        let mut buf = Buffer::empty(area);
+
+        PromptWidget::new("Hello", "World").render(area, &mut buf);
+
+        let line: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
+        assert_eq!(line, "Hello");
+    }
+
+    #[test]
+    fn prompt_mode_key_end_to_end_sets_due_from_now() {
+        use crossterm::event::KeyModifiers;
+
+        // App with a single pending item
+        let items = vec![Todo {
+            title: String::from("task 1"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        // Activate custom delay prompt
+        app.prompt_overlay = Some(super::PromptOverlay {
+            message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
+            buffer: String::new(),
+            action: super::PromptAction::CustomDelay,
+        });
+
+        // Type "1d" and press Enter
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+
+        let before = Utc::now();
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let after = Utc::now();
+
+        let due = app.items[0].due_date.expect("due date should be set");
+        let expected_min = before + Duration::days(1);
+        let expected_max = after + Duration::days(1);
+        assert!(due >= expected_min && due <= expected_max);
+        // Overlay should be cleared
+        assert!(app.prompt_overlay.is_none());
+    }
+
+    #[test]
+    fn parse_relative_duration_valid_inputs() {
+        let cases = [
+            ("0s", Duration::seconds(0)),
+            ("5s", Duration::seconds(5)),
+            ("59s", Duration::seconds(59)),
+            ("1m", Duration::minutes(1)),
+            ("10m", Duration::minutes(10)),
+            ("59m", Duration::minutes(59)),
+            ("1h", Duration::hours(1)),
+            ("12h", Duration::hours(12)),
+            ("23h", Duration::hours(23)),
+            ("1d", Duration::days(1)),
+            ("10d", Duration::days(10)),
+            ("-5s", Duration::seconds(-5)),
+            ("-2m", Duration::minutes(-2)),
+            ("-3h", Duration::hours(-3)),
+            ("-4d", Duration::days(-4)),
+            ("  5d  ", Duration::days(5)), // surrounding whitespace
+            ("+7d", Duration::days(7)),    // explicit plus sign
+            ("5 m", Duration::minutes(5)), // space before unit
+        ];
+
+        for (input, expected) in cases {
+            let got = parse_relative_duration(input).expect("should parse");
+            assert_eq!(got, expected, "input={input}");
+        }
+    }
+
+    #[test]
+    fn parse_relative_duration_invalid_inputs() {
+        let cases = [
+            "", " ", "s", "d", "+", "-", "+d", "-h", "5", "d5", "5x", "5days", "--5d", "++5d",
+        ];
+
+        for input in cases {
+            assert!(parse_relative_duration(input).is_none(), "input={input}");
+        }
+    }
+
+    #[test]
+    fn duration_compact_format_round_trip_for_canonical_strings() {
+        // Only include canonical strings that our formatter would produce
+        // (seconds <60, minutes <60, hours <24, days otherwise)
+        let canonical = [
+            "0s", "1s", "59s", "1m", "2m", "59m", "1h", "2h", "23h", "1d", "2d", "10d", "-1s",
+            "-59s", "-1m", "-59m", "-1h", "-23h", "-1d", "-10d",
+        ];
+
+        for s in canonical {
+            let dur = parse_relative_duration(s).expect("parse canonical");
+            let back = format_duration_compact(dur);
+            assert_eq!(back, s, "round-trip failed for {s}");
+        }
     }
 }
