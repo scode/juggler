@@ -62,24 +62,7 @@ impl Todo {
             let now = Utc::now();
             let duration = due.signed_duration_since(now);
 
-            let total_seconds = duration.num_seconds();
-            let abs_seconds = total_seconds.abs();
-
-            let (value, unit) = if abs_seconds < 60 {
-                (abs_seconds, "s")
-            } else if abs_seconds < 3600 {
-                (abs_seconds / 60, "m")
-            } else if abs_seconds < 86400 {
-                (abs_seconds / 3600, "h")
-            } else {
-                (abs_seconds / 86400, "d")
-            };
-
-            let time_str = if total_seconds < 0 {
-                format!("-{value}{unit}")
-            } else {
-                format!("{value}{unit}")
-            };
+            let time_str = format_duration_compact(duration);
 
             // Right-pad to 4 characters for alignment
             format!("{time_str:>4}")
@@ -956,7 +939,6 @@ fn parse_relative_duration(input: &str) -> Option<Duration> {
     }
 }
 
-#[cfg(test)]
 fn format_duration_compact(duration: Duration) -> String {
     let total_seconds = duration.num_seconds();
     let abs_seconds = total_seconds.abs();
