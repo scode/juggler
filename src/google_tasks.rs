@@ -59,6 +59,28 @@ fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
 }
 
+// Add: helpers for due date normalization/comparison
+fn parse_rfc3339_timestamp_millis(s: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.timestamp_millis())
+}
+
+fn due_dates_equal_ms(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+    match (google_due, todo_due) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+        (Some(g), Some(t)) => parse_rfc3339_timestamp_millis(g)
+            .map(|gm| gm == t.timestamp_millis())
+            .unwrap_or(false),
+    }
+}
+
+fn format_due_ms_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
+    use chrono::SecondsFormat;
+    d.map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
 impl GoogleOAuthClient {
     pub fn new(credentials: GoogleOAuthCredentials) -> Self {
         Self {
@@ -146,7 +168,7 @@ async fn create_google_task(
         } else {
             "needsAction".to_string()
         },
-        due: todo.due_date.map(|d| d.to_rfc3339()),
+        due: format_due_ms_z(&todo.due_date),
         updated: None,
         completed: None,
     };
@@ -290,7 +312,7 @@ async fn sync_to_tasks_with_base_url(
                     let needs_update = google_task.title != format!("j:{}", todo.title)
                         || google_task.notes.as_deref() != todo.comment.as_deref()
                         || (google_task.status == "completed") != todo.done
-                        || google_task.due != todo.due_date.map(|d| d.to_rfc3339());
+                        || !due_dates_equal_ms(&google_task.due, &todo.due_date);
 
                     if needs_update {
                         // Compute desired values for comparison/logging
@@ -301,7 +323,7 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             "needsAction"
                         };
-                        let desired_due: Option<String> = todo.due_date.map(|d| d.to_rfc3339());
+                        let desired_due: Option<String> = format_due_ms_z(&todo.due_date);
 
                         info!("Detected changes for Google Task (ID: {}):", task_id);
                         if google_task.title == desired_title {
@@ -319,7 +341,7 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             info!(" - status: changed to: '{}'", desired_status);
                         }
-                        if google_task.due == desired_due {
+                        if due_dates_equal_ms(&google_task.due, &todo.due_date) {
                             info!(" - due: not changed");
                         } else {
                             info!(" - due: changed to: {}", display_opt(&desired_due));
