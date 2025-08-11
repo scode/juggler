@@ -222,8 +222,10 @@ async fn handle_callback(
 
     Response::builder()
         .status(StatusCode::BAD_REQUEST)
+        .header("Content-Type", "text/html")
         .body(http_body_util::Full::new(
-            "Missing authorization code".into(),
+            "<html><body><h1>Authentication Failed</h1><p>Missing authorization code</p></body></html>"
+                .into(),
         ))
         .unwrap()
 }
