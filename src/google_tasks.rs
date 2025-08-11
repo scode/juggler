@@ -60,13 +60,18 @@ fn display_opt(value: &Option<String>) -> &str {
 }
 
 // Add: helpers for due date normalization/comparison
+#[allow(dead_code)]
 fn parse_rfc3339_timestamp_millis(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s)
         .ok()
         .map(|dt| dt.timestamp_millis())
 }
 
-fn due_dates_equal_ms(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+#[allow(dead_code)]
+fn due_dates_equal_ms(
+    google_due: &Option<String>,
+    todo_due: &Option<chrono::DateTime<Utc>>,
+) -> bool {
     match (google_due, todo_due) {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
@@ -76,6 +81,7 @@ fn due_dates_equal_ms(google_due: &Option<String>, todo_due: &Option<chrono::Dat
     }
 }
 
+#[allow(dead_code)]
 fn format_due_ms_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
     use chrono::SecondsFormat;
     d.map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
@@ -88,7 +94,10 @@ fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
         .map(|dt| dt.with_timezone(&Utc).date_naive())
 }
 
-fn due_dates_same_day_utc(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+fn due_dates_same_day_utc(
+    google_due: &Option<String>,
+    todo_due: &Option<chrono::DateTime<Utc>>,
+) -> bool {
     match (google_due, todo_due) {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
@@ -110,7 +119,10 @@ fn due_dates_same_day_utc(google_due: &Option<String>, todo_due: &Option<chrono:
 /// This function treats two dues as "equivalent" if they fall on the same UTC calendar day
 /// OR if their absolute time difference is under one minute. The small tolerance accommodates
 /// minor formatting or conversion differences without masking real date changes.
-fn due_dates_equivalent(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+fn due_dates_equivalent(
+    google_due: &Option<String>,
+    todo_due: &Option<chrono::DateTime<Utc>>,
+) -> bool {
     use chrono::Duration;
     match (google_due, todo_due) {
         (None, None) => true,
@@ -558,6 +570,40 @@ mod tests {
     use super::*;
     use wiremock::matchers::{bearer_token, body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn test_due_dates_equivalent_date_only_and_tolerance() {
+        // This unit test verifies the behavior described in the docstring for
+        // `due_dates_equivalent`: Google Tasks API exposes `due` as date-only, so
+        // we consider dues equivalent when they fall on the same UTC day, and we
+        // allow a very small (< 60s) tolerance across boundaries.
+
+        // Same calendar day should be treated as equivalent (date-only semantics)
+        let google_due_same_day = Some("2025-08-20T00:00:00Z".to_string());
+        let todo_due_same_day = Some(
+            chrono::Utc
+                .with_ymd_and_hms(2025, 8, 20, 23, 25, 14)
+                .unwrap(),
+        );
+        assert!(due_dates_equivalent(
+            &google_due_same_day,
+            &todo_due_same_day
+        ));
+
+        // Across a calendar boundary but within 60 seconds should still be equivalent
+        let google_due_just_before = Some("2025-08-20T23:59:40Z".to_string());
+        let todo_due_just_after =
+            Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 0, 10).unwrap());
+        assert!(due_dates_equivalent(
+            &google_due_just_before,
+            &todo_due_just_after
+        ));
+
+        // Different days and beyond the 1-minute tolerance should NOT be equivalent
+        let google_due_far = Some("2025-08-20T00:00:00Z".to_string());
+        let todo_due_far = Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 1, 1).unwrap());
+        assert!(!due_dates_equivalent(&google_due_far, &todo_due_far));
+    }
 
     #[tokio::test]
     async fn test_sync_successful_create_new_task() {
