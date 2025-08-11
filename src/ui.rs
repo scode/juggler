@@ -29,7 +29,7 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o - open, j/k - nav, x - select, e - done, E - edit, c - new, s - snooze 1d, S - unsnooze 1d, p - snooze 7d, P - prepone 7d, t - custom delay, q - quit";
+pub const HELP_TEXT: &str = "o-open, j/k-nav, x-select, e-done, E-edit, c-new, s:+1d, S:-1d, p:+7d, P:-7d, t-custom, q-quit. Ops affect selected; if none, the cursored item.";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
@@ -359,9 +359,9 @@ impl<T: TodoEditor> App<T> {
 
     fn display_text_internal(&self, index: usize) -> Text<'_> {
         let todo = &self.items[index];
-        let is_selected = Some(index) == self.get_selected_item_index();
+        let is_cursored = Some(index) == self.get_cursored_item_index();
 
-        let cursor_prefix = if is_selected { "▶ " } else { "  " };
+        let cursor_prefix = if is_cursored { "▶ " } else { "  " };
         // Single status box: selection takes precedence over done
         let status_box = if todo.selected {
             "[x] "
@@ -387,7 +387,7 @@ impl<T: TodoEditor> App<T> {
             ));
         }
 
-        if is_selected {
+        if is_cursored {
             first_line_spans.push(Span::styled(
                 &todo.title,
                 Style::default().add_modifier(Modifier::BOLD),
@@ -503,7 +503,7 @@ impl<T: TodoEditor> App<T> {
             KEY_QUIT => self.exit(),
             KEY_NEXT_ITEM => self.select_next_internal(),
             KEY_PREVIOUS_ITEM => self.select_previous_internal(),
-            KEY_TOGGLE_EXPAND => self.toggle_selected(),
+            KEY_TOGGLE_EXPAND => self.toggle_cursored_expanded(),
             KEY_TOGGLE_DONE => self.toggle_done(),
             KEY_EDIT => self.edit_item(),
             KEY_TOGGLE_SELECT => self.toggle_select(),
@@ -516,8 +516,8 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
-    fn toggle_selected(&mut self) {
-        if let Some(i) = self.get_selected_item_index()
+    fn toggle_cursored_expanded(&mut self) {
+        if let Some(i) = self.get_cursored_item_index()
             && let Some(item) = self.items.get_mut(i)
         {
             item.expanded = !item.expanded;
@@ -622,7 +622,7 @@ impl<T: TodoEditor> App<T> {
                     }
                 }
             }
-        } else if let Some(cursor_idx) = self.get_selected_item_index() {
+        } else if let Some(cursor_idx) = self.get_cursored_item_index() {
             // If no items are selected, toggle the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 item.done = !item.done;
@@ -641,7 +641,7 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_select(&mut self) {
-        if let Some(i) = self.get_selected_item_index()
+        if let Some(i) = self.get_cursored_item_index()
             && let Some(item) = self.items.get_mut(i)
         {
             item.selected = !item.selected;
@@ -677,7 +677,7 @@ impl<T: TodoEditor> App<T> {
                     item.selected = false; // Deselect after snoozing
                 }
             }
-        } else if let Some(cursor_idx) = self.get_selected_item_index() {
+        } else if let Some(cursor_idx) = self.get_cursored_item_index() {
             // If no items are selected, snooze the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
                 let now = Utc::now();
@@ -715,7 +715,7 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn edit_item(&mut self) {
-        if let Some(cursor_idx) = self.get_selected_item_index()
+        if let Some(cursor_idx) = self.get_cursored_item_index()
             && let Some(item) = self.items.get(cursor_idx)
         {
             let result = self.editor.edit_todo(item);
@@ -807,7 +807,7 @@ impl<T: TodoEditor> App<T> {
         self.exit = true;
     }
 
-    fn get_selected_item_index(&self) -> Option<usize> {
+    fn get_cursored_item_index(&self) -> Option<usize> {
         let pending_items: Vec<(usize, &Todo)> = self
             .items
             .iter()
@@ -893,7 +893,7 @@ impl<T: TodoEditor> App<T> {
                     item.selected = false;
                 }
             }
-        } else if let Some(cursor_idx) = self.get_selected_item_index()
+        } else if let Some(cursor_idx) = self.get_cursored_item_index()
             && let Some(item) = self.items.get_mut(cursor_idx)
         {
             item.due_date = Some(target_due);
@@ -1040,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn toggle_selected_via_key_event() {
+    fn toggle_cursored_expanded_via_key_event() {
         let items = vec![Todo {
             title: String::from("a"),
             comment: Some(String::from("comment")),
