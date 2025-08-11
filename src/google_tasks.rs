@@ -59,6 +59,70 @@ fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
 }
 
+// New: Google Tasks treats 'due' as a date-only field (midnight). Compare by UTC date.
+fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).date_naive())
+}
+
+fn due_dates_same_day_utc(
+    google_due: &Option<String>,
+    todo_due: &Option<chrono::DateTime<Utc>>,
+) -> bool {
+    match (google_due, todo_due) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+        (Some(g), Some(t)) => parse_google_due_date_naive(g)
+            .map(|gd| gd == t.date_naive())
+            .unwrap_or(false),
+    }
+}
+
+/// Imprecise due-date equivalence tailored to Google Tasks API semantics.
+///
+/// Google Tasks stores `due` as a date-only field; the time component is discarded
+/// when setting or reading via the public API. See the official docs:
+/// https://developers.google.com/workspace/tasks/reference/rest/v1/tasks (field `due`).
+/// The Google Tasks UI may display time-of-day, but that precision is not exposed
+/// through the public API. As a result, the API typically returns midnight UTC (00:00:00Z)
+/// for `due`, while local data may carry intra-day times.
+///
+/// This function treats two dues as "equivalent" if they fall on the same UTC calendar day
+/// OR if their absolute time difference is under one minute. The small tolerance accommodates
+/// minor formatting or conversion differences without masking real date changes.
+fn due_dates_equivalent(
+    google_due: &Option<String>,
+    todo_due: &Option<chrono::DateTime<Utc>>,
+) -> bool {
+    use chrono::Duration;
+    match (google_due, todo_due) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+        (Some(g), Some(t)) => {
+            if due_dates_same_day_utc(google_due, todo_due) {
+                return true;
+            }
+            if let Ok(gdt) = chrono::DateTime::parse_from_rfc3339(g) {
+                let g_utc = gdt.with_timezone(&Utc);
+                let diff = t.signed_duration_since(g_utc).num_seconds().abs();
+                return diff < Duration::minutes(1).num_seconds();
+            }
+            false
+        }
+    }
+}
+
+fn format_due_midnight_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
+    use chrono::{NaiveTime, SecondsFormat};
+    d.map(|dt| {
+        let date = dt.date_naive();
+        let ndt = date.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap());
+        let utc_dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc);
+        utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
+    })
+}
+
 impl GoogleOAuthClient {
     pub fn new(credentials: GoogleOAuthCredentials) -> Self {
         Self {
@@ -146,7 +210,8 @@ async fn create_google_task(
         } else {
             "needsAction".to_string()
         },
-        due: todo.due_date.map(|d| d.to_rfc3339()),
+        // Normalize to midnight Z to match Google Tasks semantics
+        due: format_due_midnight_z(&todo.due_date),
         updated: None,
         completed: None,
     };
@@ -290,7 +355,7 @@ async fn sync_to_tasks_with_base_url(
                     let needs_update = google_task.title != format!("j:{}", todo.title)
                         || google_task.notes.as_deref() != todo.comment.as_deref()
                         || (google_task.status == "completed") != todo.done
-                        || google_task.due != todo.due_date.map(|d| d.to_rfc3339());
+                        || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
                         // Compute desired values for comparison/logging
@@ -301,7 +366,8 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             "needsAction"
                         };
-                        let desired_due: Option<String> = todo.due_date.map(|d| d.to_rfc3339());
+                        // Always send midnight Z for due date
+                        let desired_due: Option<String> = format_due_midnight_z(&todo.due_date);
 
                         info!("Detected changes for Google Task (ID: {}):", task_id);
                         if google_task.title == desired_title {
@@ -319,9 +385,36 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             info!(" - status: changed to: '{}'", desired_status);
                         }
-                        if google_task.due == desired_due {
+                        if due_dates_equivalent(&google_task.due, &todo.due_date) {
                             info!(" - due: not changed");
                         } else {
+                            // Extra diagnostics
+                            let google_due_str = google_task.due.as_deref().unwrap_or("<none>");
+                            let google_date = google_task
+                                .due
+                                .as_deref()
+                                .and_then(parse_google_due_date_naive)
+                                .map(|d| d.to_string())
+                                .unwrap_or_else(|| "<n/a>".to_string());
+                            let todo_date = todo
+                                .due_date
+                                .map(|d| d.date_naive().to_string())
+                                .unwrap_or_else(|| "<none>".to_string());
+                            let diff_secs = google_task
+                                .due
+                                .as_deref()
+                                .and_then(|g| chrono::DateTime::parse_from_rfc3339(g).ok())
+                                .map(|g| {
+                                    let g_utc = g.with_timezone(&Utc);
+                                    todo.due_date
+                                        .map(|t| t.signed_duration_since(g_utc).num_seconds().abs())
+                                        .unwrap_or(0)
+                                })
+                                .unwrap_or(0);
+                            info!(
+                                " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
+                                google_due_str, google_date, todo_date, diff_secs
+                            );
                             info!(" - due: changed to: {}", display_opt(&desired_due));
                         }
 
@@ -447,8 +540,43 @@ mod tests {
     /// so use a fake test id here.
     const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
     use super::*;
+    use chrono::TimeZone;
     use wiremock::matchers::{bearer_token, body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn test_due_dates_equivalent_date_only_and_tolerance() {
+        // This unit test verifies the behavior described in the docstring for
+        // `due_dates_equivalent`: Google Tasks API exposes `due` as date-only, so
+        // we consider dues equivalent when they fall on the same UTC day, and we
+        // allow a very small (< 60s) tolerance across boundaries.
+
+        // Same calendar day should be treated as equivalent (date-only semantics)
+        let google_due_same_day = Some("2025-08-20T00:00:00Z".to_string());
+        let todo_due_same_day = Some(
+            chrono::Utc
+                .with_ymd_and_hms(2025, 8, 20, 23, 25, 14)
+                .unwrap(),
+        );
+        assert!(due_dates_equivalent(
+            &google_due_same_day,
+            &todo_due_same_day
+        ));
+
+        // Across a calendar boundary but within 60 seconds should still be equivalent
+        let google_due_just_before = Some("2025-08-20T23:59:40Z".to_string());
+        let todo_due_just_after =
+            Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 0, 10).unwrap());
+        assert!(due_dates_equivalent(
+            &google_due_just_before,
+            &todo_due_just_after
+        ));
+
+        // Different days and beyond the 1-minute tolerance should NOT be equivalent
+        let google_due_far = Some("2025-08-20T00:00:00Z".to_string());
+        let todo_due_far = Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 1, 1).unwrap());
+        assert!(!due_dates_equivalent(&google_due_far, &todo_due_far));
+    }
 
     #[tokio::test]
     async fn test_sync_successful_create_new_task() {

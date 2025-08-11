@@ -31,10 +31,6 @@ pub struct OAuthResult {
 
 #[derive(Debug)]
 struct OAuthState {
-    #[allow(dead_code)]
-    code_verifier: String,
-    #[allow(dead_code)]
-    client_id: String,
     tx: OAuthSender,
 }
 
@@ -75,8 +71,6 @@ pub async fn run_oauth_flow(
     let (tx, rx) = oneshot::channel();
 
     let oauth_state = Arc::new(OAuthState {
-        code_verifier: code_verifier.clone(),
-        client_id: client_id.clone(),
         tx: Arc::new(Mutex::new(Some(tx))),
     });
 
@@ -190,8 +184,10 @@ async fn handle_callback(
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
-                format!("<html><body><h1>Authentication Failed</h1><p>Error: {error_description}</p></body></html>")
-                    .into(),
+                format!(
+                    "<html><body><h1>Authentication Failed</h1><p>Error: {error_description}</p></body></html>"
+                )
+                .into(),
             ))
             .unwrap();
     }
@@ -203,7 +199,7 @@ async fn handle_callback(
             let _ = tx.send(Ok(code.clone()));
         }
 
-        Response::builder()
+        return Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
@@ -215,22 +211,23 @@ async fn handle_callback(
                 </body></html>"#
                     .into(),
             ))
-            .unwrap()
-    } else {
-        if let Ok(mut tx_guard) = oauth_state.tx.lock()
-            && let Some(tx) = tx_guard.take()
-        {
-            let _ = tx.send(Err("Missing authorization code".to_string()));
-        }
-
-        Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .header("Content-Type", "text/html")
-            .body(http_body_util::Full::new(
-                "<html><body><h1>Authentication Failed</h1><p>Missing authorization code</p></body></html>".into(),
-            ))
-            .unwrap()
+            .unwrap();
     }
+
+    if let Ok(mut tx_guard) = oauth_state.tx.lock()
+        && let Some(tx) = tx_guard.take()
+    {
+        let _ = tx.send(Err("Missing authorization code".to_string()));
+    }
+
+    Response::builder()
+        .status(StatusCode::BAD_REQUEST)
+        .header("Content-Type", "text/html")
+        .body(http_body_util::Full::new(
+            "<html><body><h1>Authentication Failed</h1><p>Missing authorization code</p></body></html>"
+                .into(),
+        ))
+        .unwrap()
 }
 
 fn build_auth_url(client_id: &str, redirect_uri: &str, code_challenge: &str) -> String {
