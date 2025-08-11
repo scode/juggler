@@ -98,6 +98,28 @@ fn due_dates_same_day_utc(google_due: &Option<String>, todo_due: &Option<chrono:
     }
 }
 
+// Imprecise equality: treat as equal if they fall on the same UTC calendar day
+// OR if the absolute time difference is less than 24 hours. This accommodates
+// Google returning midnight while local tasks might have intra-day times.
+fn due_dates_equivalent(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+    use chrono::Duration;
+    match (google_due, todo_due) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+        (Some(g), Some(t)) => {
+            if due_dates_same_day_utc(google_due, todo_due) {
+                return true;
+            }
+            if let Ok(gdt) = chrono::DateTime::parse_from_rfc3339(g) {
+                let g_utc = gdt.with_timezone(&Utc);
+                let diff = t.signed_duration_since(g_utc).num_seconds().abs();
+                return diff < Duration::hours(24).num_seconds();
+            }
+            false
+        }
+    }
+}
+
 fn format_due_midnight_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
     use chrono::{NaiveTime, SecondsFormat};
     d.map(|dt| {
@@ -340,7 +362,7 @@ async fn sync_to_tasks_with_base_url(
                     let needs_update = google_task.title != format!("j:{}", todo.title)
                         || google_task.notes.as_deref() != todo.comment.as_deref()
                         || (google_task.status == "completed") != todo.done
-                        || !due_dates_same_day_utc(&google_task.due, &todo.due_date);
+                        || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
                         // Compute desired values for comparison/logging
@@ -370,7 +392,7 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             info!(" - status: changed to: '{}'", desired_status);
                         }
-                        if due_dates_same_day_utc(&google_task.due, &todo.due_date) {
+                        if due_dates_equivalent(&google_task.due, &todo.due_date) {
                             info!(" - due: not changed");
                         } else {
                             // Extra diagnostics
@@ -385,9 +407,20 @@ async fn sync_to_tasks_with_base_url(
                                 .due_date
                                 .map(|d| d.date_naive().to_string())
                                 .unwrap_or_else(|| "<none>".to_string());
+                            let diff_secs = google_task
+                                .due
+                                .as_deref()
+                                .and_then(|g| chrono::DateTime::parse_from_rfc3339(g).ok())
+                                .map(|g| {
+                                    let g_utc = g.with_timezone(&Utc);
+                                    todo.due_date
+                                        .map(|t| t.signed_duration_since(g_utc).num_seconds().abs())
+                                        .unwrap_or(0)
+                                })
+                                .unwrap_or(0);
                             info!(
-                                " - due: changed (google='{}' date={} vs todo_date={})",
-                                google_due_str, google_date, todo_date
+                                " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
+                                google_due_str, google_date, todo_date, diff_secs
                             );
                             info!(" - due: changed to: {}", display_opt(&desired_due));
                         }
