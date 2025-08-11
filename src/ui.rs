@@ -424,23 +424,21 @@ impl<T: TodoEditor> App<T> {
                 if self.prompt_overlay.is_some() {
                     // Modal prompt handling when overlay is active
                     self.handle_prompt_key(key_event);
-                } else {
-                    if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
-                        && self.editor.needs_terminal_restoration()
-                    {
-                        // Special handling for external editor - restore and reinitialize terminal
-                        ratatui::restore();
-                        if key_event.code == KEY_EDIT {
-                            self.edit_item();
-                        } else {
-                            self.create_new_item();
-                        }
-                        *terminal = ratatui::init();
-                    } else if key_event.code == KEY_CUSTOM_DELAY {
-                        self.handle_custom_delay(terminal)?;
+                } else if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
+                    && self.editor.needs_terminal_restoration()
+                {
+                    // Special handling for external editor - restore and reinitialize terminal
+                    ratatui::restore();
+                    if key_event.code == KEY_EDIT {
+                        self.edit_item();
                     } else {
-                        self.handle_key_event_internal(key_event);
+                        self.create_new_item();
                     }
+                    *terminal = ratatui::init();
+                } else if key_event.code == KEY_CUSTOM_DELAY {
+                    self.handle_custom_delay(terminal)?;
+                } else {
+                    self.handle_key_event_internal(key_event);
                 }
             }
             _ => {}
