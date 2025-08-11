@@ -59,34 +59,6 @@ fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
 }
 
-// Add: helpers for due date normalization/comparison
-#[allow(dead_code)]
-fn parse_rfc3339_timestamp_millis(s: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|dt| dt.timestamp_millis())
-}
-
-#[allow(dead_code)]
-fn due_dates_equal_ms(
-    google_due: &Option<String>,
-    todo_due: &Option<chrono::DateTime<Utc>>,
-) -> bool {
-    match (google_due, todo_due) {
-        (None, None) => true,
-        (Some(_), None) | (None, Some(_)) => false,
-        (Some(g), Some(t)) => parse_rfc3339_timestamp_millis(g)
-            .map(|gm| gm == t.timestamp_millis())
-            .unwrap_or(false),
-    }
-}
-
-#[allow(dead_code)]
-fn format_due_ms_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
-    use chrono::SecondsFormat;
-    d.map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
-}
-
 // New: Google Tasks treats 'due' as a date-only field (midnight). Compare by UTC date.
 fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
     chrono::DateTime::parse_from_rfc3339(s)
@@ -145,7 +117,8 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
     use chrono::{NaiveTime, SecondsFormat};
     d.map(|dt| {
         let date = dt.date_naive();
-        let ndt = date.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap());
+        let ndt = date
+            .and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap());
         let utc_dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc);
         utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
     })
