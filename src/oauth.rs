@@ -203,7 +203,12 @@ async fn handle_callback(
             .status(StatusCode::OK)
             .header("Content-Type", "text/html")
             .body(http_body_util::Full::new(
-                "<html><body><h1>Authentication Successful</h1><p>You can close this window.</p></body></html>"
+                r#"<html><body>
+                    <h1>Authentication Successful!</h1>
+                    <p>You have successfully authenticated with Google Tasks.</p>
+                    <p>You can now close this window and return to your terminal.</p>
+                    <script>window.close();</script>
+                </body></html>"#
                     .into(),
             ))
             .unwrap();
