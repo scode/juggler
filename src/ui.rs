@@ -321,7 +321,6 @@ impl<T: TodoEditor> App<T> {
         first_line_spans.push(Span::raw(cursor_prefix));
         first_line_spans.push(Span::raw(status_box));
 
-        // Add relative time if due date exists
         if let Some(relative_time) = todo.format_relative_time() {
             let color = match todo.due_date_urgency() {
                 Some(DueDateUrgency::Overdue) => Color::Red,
