@@ -345,7 +345,10 @@ impl<T: TodoEditor> App<T> {
         }
 
         match &self.prompt_overlay {
-            Some(prompt) => frame.render_widget(PromptWidget::new(&prompt.message, &prompt.buffer), help_area),
+            Some(prompt) => frame.render_widget(
+                PromptWidget::new(&prompt.message, &prompt.buffer),
+                help_area,
+            ),
             None => {
                 let help_widget =
                     Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
@@ -872,7 +875,7 @@ impl<T: TodoEditor> App<T> {
         });
     }
 
-        fn delay_from_now(&mut self, duration: Duration) {
+    fn delay_from_now(&mut self, duration: Duration) {
         let now = Utc::now();
         let target_due = now + duration;
 
@@ -1874,9 +1877,7 @@ mod tests {
         PromptWidget::new(message, input).render(area, &mut buf);
 
         // Expect first line to contain message+input then spaces
-        let line0: String = (0..area.width)
-            .map(|x| buf[(x, area.y)].symbol())
-            .collect();
+        let line0: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
         let expected_content = format!("{}{}", message, input);
         let mut expected_line0 = expected_content.clone();
         if expected_line0.len() < area.width as usize {
@@ -1902,9 +1903,7 @@ mod tests {
 
         PromptWidget::new("Hello", "World").render(area, &mut buf);
 
-        let line: String = (0..area.width)
-            .map(|x| buf[(x, area.y)].symbol())
-            .collect();
+        let line: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
         assert_eq!(line, "Hello");
     }
 
@@ -1970,7 +1969,7 @@ mod tests {
             ("5 m", Duration::minutes(5)), // space before unit
         ];
 
-        for (input, expected) in cases { 
+        for (input, expected) in cases {
             let got = parse_relative_duration(input).expect("should parse");
             assert_eq!(got, expected, "input={input}");
         }
@@ -1979,23 +1978,10 @@ mod tests {
     #[test]
     fn parse_relative_duration_invalid_inputs() {
         let cases = [
-            "",
-            " ",
-            "s",
-            "d",
-            "+",
-            "-",
-            "+d",
-            "-h",
-            "5",
-            "d5",
-            "5x",
-            "5days",
-            "--5d",
-            "++5d",
+            "", " ", "s", "d", "+", "-", "+d", "-h", "5", "d5", "5x", "5days", "--5d", "++5d",
         ];
 
-        for input in cases { 
+        for input in cases {
             assert!(parse_relative_duration(input).is_none(), "input={input}");
         }
     }
@@ -2005,17 +1991,11 @@ mod tests {
         // Only include canonical strings that our formatter would produce
         // (seconds <60, minutes <60, hours <24, days otherwise)
         let canonical = [
-            "0s", "1s", "59s",
-            "1m", "2m", "59m",
-            "1h", "2h", "23h",
-            "1d", "2d", "10d",
-            "-1s", "-59s",
-            "-1m", "-59m",
-            "-1h", "-23h",
-            "-1d", "-10d",
+            "0s", "1s", "59s", "1m", "2m", "59m", "1h", "2h", "23h", "1d", "2d", "10d", "-1s",
+            "-59s", "-1m", "-59m", "-1h", "-23h", "-1d", "-10d",
         ];
 
-        for s in canonical { 
+        for s in canonical {
             let dur = parse_relative_duration(s).expect("parse canonical");
             let back = format_duration_compact(dur);
             assert_eq!(back, s, "round-trip failed for {s}");
