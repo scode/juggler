@@ -55,13 +55,16 @@ cargo run
 ```
 
 **Keyboard Shortcuts:**
-- `j/k` - Navigate up/down
-- `o` - Toggle expand/collapse item
-- `x` - Select/deselect item
-- `e` - Toggle done status
-- `E` - Edit item in external editor
-- `s` - Snooze selected items by 1 day
-- `S` - Snooze selected items by 1 week
+- `j/k` - Move cursor down/up
+- `o` - Toggle expand/collapse on the cursored item
+- `x` - Select/deselect the cursored item
+- `e` - Toggle done on selected items; if none selected, acts on the cursored item
+- `E` - Edit the cursored item in external editor
+- `s` - Snooze selected items by 1 day; if none selected, snooze the cursored item
+- `S` - Unsnooze (minus 1 day) for selected items; if none selected, unsnooze the cursored item
+- `p` - Snooze by 7 days for selected items; if none selected, snooze the cursored item
+- `P` - Prepone by 7 days for selected items; if none selected, prepone the cursored item
+- `t` - Custom delay prompt (e.g., 5d, -2h)
 - `q` - Quit and save
 
 ### Command Line Mode
