@@ -81,6 +81,33 @@ fn format_due_ms_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
     d.map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
+// New: Google Tasks treats 'due' as a date-only field (midnight). Compare by UTC date.
+fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).date_naive())
+}
+
+fn due_dates_same_day_utc(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> bool {
+    match (google_due, todo_due) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+        (Some(g), Some(t)) => parse_google_due_date_naive(g)
+            .map(|gd| gd == t.date_naive())
+            .unwrap_or(false),
+    }
+}
+
+fn format_due_midnight_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
+    use chrono::{NaiveTime, SecondsFormat};
+    d.map(|dt| {
+        let date = dt.date_naive();
+        let ndt = date.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap());
+        let utc_dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc);
+        utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
+    })
+}
+
 impl GoogleOAuthClient {
     pub fn new(credentials: GoogleOAuthCredentials) -> Self {
         Self {
@@ -168,7 +195,8 @@ async fn create_google_task(
         } else {
             "needsAction".to_string()
         },
-        due: format_due_ms_z(&todo.due_date),
+        // Normalize to midnight Z to match Google Tasks semantics
+        due: format_due_midnight_z(&todo.due_date),
         updated: None,
         completed: None,
     };
@@ -312,7 +340,7 @@ async fn sync_to_tasks_with_base_url(
                     let needs_update = google_task.title != format!("j:{}", todo.title)
                         || google_task.notes.as_deref() != todo.comment.as_deref()
                         || (google_task.status == "completed") != todo.done
-                        || !due_dates_equal_ms(&google_task.due, &todo.due_date);
+                        || !due_dates_same_day_utc(&google_task.due, &todo.due_date);
 
                     if needs_update {
                         // Compute desired values for comparison/logging
@@ -323,7 +351,8 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             "needsAction"
                         };
-                        let desired_due: Option<String> = format_due_ms_z(&todo.due_date);
+                        // Always send midnight Z for due date
+                        let desired_due: Option<String> = format_due_midnight_z(&todo.due_date);
 
                         info!("Detected changes for Google Task (ID: {}):", task_id);
                         if google_task.title == desired_title {
@@ -341,25 +370,24 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             info!(" - status: changed to: '{}'", desired_status);
                         }
-                        if due_dates_equal_ms(&google_task.due, &todo.due_date) {
+                        if due_dates_same_day_utc(&google_task.due, &todo.due_date) {
                             info!(" - due: not changed");
                         } else {
-                            // Extra diagnostics to investigate persistent diffs
+                            // Extra diagnostics
                             let google_due_str = google_task.due.as_deref().unwrap_or("<none>");
-                            let google_due_ms = google_task
+                            let google_date = google_task
                                 .due
                                 .as_deref()
-                                .and_then(parse_rfc3339_timestamp_millis)
-                                .map(|v| v.to_string())
+                                .and_then(parse_google_due_date_naive)
+                                .map(|d| d.to_string())
                                 .unwrap_or_else(|| "<n/a>".to_string());
-                            let todo_due_ms = todo
+                            let todo_date = todo
                                 .due_date
-                                .map(|d| d.timestamp_millis())
-                                .map(|v| v.to_string())
+                                .map(|d| d.date_naive().to_string())
                                 .unwrap_or_else(|| "<none>".to_string());
                             info!(
-                                " - due: changed (google='{}' ms={} vs todo_ms={})",
-                                google_due_str, google_due_ms, todo_due_ms
+                                " - due: changed (google='{}' date={} vs todo_date={})",
+                                google_due_str, google_date, todo_date
                             );
                             info!(" - due: changed to: {}", display_opt(&desired_due));
                         }
