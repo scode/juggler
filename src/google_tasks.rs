@@ -344,6 +344,23 @@ async fn sync_to_tasks_with_base_url(
                         if due_dates_equal_ms(&google_task.due, &todo.due_date) {
                             info!(" - due: not changed");
                         } else {
+                            // Extra diagnostics to investigate persistent diffs
+                            let google_due_str = google_task.due.as_deref().unwrap_or("<none>");
+                            let google_due_ms = google_task
+                                .due
+                                .as_deref()
+                                .and_then(parse_rfc3339_timestamp_millis)
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "<n/a>".to_string());
+                            let todo_due_ms = todo
+                                .due_date
+                                .map(|d| d.timestamp_millis())
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "<none>".to_string());
+                            info!(
+                                " - due: changed (google='{}' ms={} vs todo_ms={})",
+                                google_due_str, google_due_ms, todo_due_ms
+                            );
                             info!(" - due: changed to: {}", display_opt(&desired_due));
                         }
 
