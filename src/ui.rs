@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
-    style::{Modifier, Style, Color},
+    style::{Color, Modifier, Style},
     text::{Span, Text},
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
