@@ -1072,7 +1072,10 @@ mod tests {
             due_date: None,
             google_task_id: None,
         };
-        assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a (...)");
+        assert_eq!(
+            spans_to_string(&with_comment.collapsed_summary()),
+            "a (...)"
+        );
 
         let without_comment = Todo {
             title: String::from("b"),
