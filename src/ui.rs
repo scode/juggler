@@ -119,7 +119,7 @@ impl Todo {
         {
             for line in comment.lines() {
                 lines.push(ratatui::text::Line::from(vec![
-                    Span::raw("         "),
+                    Span::raw("           "),
                     Span::raw(line),
                 ]));
             }
@@ -155,7 +155,7 @@ impl Todo {
 
         spans.push(Span::raw(&self.title));
         if self.has_comment() {
-            spans.push(Span::raw(" >"));
+            spans.push(Span::raw(" (...)"));
         }
         spans
     }
@@ -401,8 +401,12 @@ impl<T: TodoEditor> App<T> {
             .as_ref()
             .map(|c| !c.trim().is_empty())
             .unwrap_or(false);
-        if todo.expanded && has_comment {
-            first_line_spans.push(Span::raw(" >>>"));
+        if has_comment {
+            if todo.expanded {
+                first_line_spans.push(Span::raw(" >>>"));
+            } else {
+                first_line_spans.push(Span::raw(" (...)"));
+            }
         }
 
         let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
@@ -1068,7 +1072,7 @@ mod tests {
             due_date: None,
             google_task_id: None,
         };
-        assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a >");
+        assert_eq!(spans_to_string(&with_comment.collapsed_summary()), "a (...)");
 
         let without_comment = Todo {
             title: String::from("b"),
@@ -1095,7 +1099,7 @@ mod tests {
         };
         assert_eq!(
             text_to_string(&todo.expanded_text()),
-            "a >>>\n         line1\n         line2"
+            "a >>>\n           line1\n           line2"
         );
     }
 
@@ -1126,7 +1130,7 @@ mod tests {
         assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
         assert_eq!(
             text_to_string(&app.display_text_internal(1)),
-            "  [ ] b >>>\n         c1\n         c2"
+            "  [ ] b >>>\n           c1\n           c2"
         );
     }
 
@@ -1176,7 +1180,7 @@ mod tests {
 
         assert_eq!(
             text_to_string(&app.display_text_internal(1)),
-            "  [ ]   2d b >>>\n         c1\n         c2"
+            "  [ ]   2d b >>>\n           c1\n           c2"
         );
     }
 
@@ -1236,7 +1240,7 @@ mod tests {
         };
         assert_eq!(
             spans_to_string(&collapsed_with_comment.collapsed_summary()),
-            "Task with details >"
+            "Task with details (...)"
         );
 
         // Test expanded item with comment (shows 📖)
@@ -1251,7 +1255,7 @@ mod tests {
         };
         assert_eq!(
             text_to_string(&expanded_with_comment.expanded_text()),
-            "Task with details >>>\n         Some details"
+            "Task with details >>>\n           Some details"
         );
 
         // Test item without comment (no icon)
