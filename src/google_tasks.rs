@@ -21,11 +21,15 @@ struct GoogleTask {
 #[derive(Debug, serde::Deserialize)]
 struct GoogleTasksListResponse {
     items: Option<Vec<GoogleTask>>,
+    #[serde(rename = "nextPageToken")]
+    next_page_token: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct GoogleTaskListsResponse {
     items: Option<Vec<GoogleTaskList>>,
+    #[serde(rename = "nextPageToken")]
+    next_page_token: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -192,6 +196,92 @@ impl GoogleOAuthClient {
     }
 }
 
+async fn fetch_all_tasklists(
+    client: &reqwest::Client,
+    access_token: &str,
+    base_url: &str,
+) -> Result<Vec<GoogleTaskList>, Box<dyn std::error::Error>> {
+    let mut all_lists: Vec<GoogleTaskList> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let url = format!("{base_url}/tasks/v1/users/@me/lists");
+        let mut req = client.get(&url).bearer_auth(access_token);
+        req = req.query(&[("maxResults", "100")]);
+        if let Some(ref token) = page_token {
+            req = req.query(&[("pageToken", token)]);
+        }
+
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Google Tasks API request failed with status {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )
+            .into());
+        }
+
+        let payload: GoogleTaskListsResponse = resp.json().await?;
+        if let Some(items) = payload.items {
+            all_lists.extend(items);
+        }
+
+        match payload.next_page_token {
+            Some(token) if !token.is_empty() => page_token = Some(token),
+            _ => break,
+        }
+    }
+
+    Ok(all_lists)
+}
+
+async fn fetch_all_tasks(
+    client: &reqwest::Client,
+    list_id: &str,
+    access_token: &str,
+    base_url: &str,
+) -> Result<Vec<GoogleTask>, Box<dyn std::error::Error>> {
+    let mut all_tasks: Vec<GoogleTask> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let url = format!("{base_url}/tasks/v1/lists/{}/tasks", list_id);
+        let mut req = client.get(&url).bearer_auth(access_token);
+        req = req.query(&[
+            ("maxResults", "100"),
+            ("showCompleted", "true"),
+            ("showHidden", "true"),
+            ("showDeleted", "false"),
+        ]);
+        if let Some(ref token) = page_token {
+            req = req.query(&[("pageToken", token)]);
+        }
+
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Google Tasks API request failed with status {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )
+            .into());
+        }
+
+        let payload: GoogleTasksListResponse = resp.json().await?;
+        if let Some(items) = payload.items {
+            all_tasks.extend(items);
+        }
+
+        match payload.next_page_token {
+            Some(token) if !token.is_empty() => page_token = Some(token),
+            _ => break,
+        }
+    }
+
+    Ok(all_tasks)
+}
+
 /// Helper function to create a new Google Task from a Todo
 async fn create_google_task(
     client: &reqwest::Client,
@@ -291,27 +381,9 @@ async fn sync_to_tasks_with_base_url(
 
     let client = reqwest::Client::new();
 
-    // First, find the task list for synchronization
-    let tasklists_url = format!("{base_url}/tasks/v1/users/@me/lists");
-    let tasklists_response = client
-        .get(tasklists_url)
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-
-    if !tasklists_response.status().is_success() {
-        return Err(format!(
-            "Google Tasks API request failed with status {}: {}",
-            tasklists_response.status(),
-            tasklists_response.text().await.unwrap_or_default()
-        )
-        .into());
-    }
-
-    let tasklists: GoogleTaskListsResponse = tasklists_response.json().await?;
-    let juggler_list = tasklists
-        .items
-        .unwrap_or_default()
+    // First, find the task list for synchronization (across all pages)
+    let all_tasklists = fetch_all_tasklists(&client, access_token, base_url).await?;
+    let juggler_list = all_tasklists
         .into_iter()
         .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
         .ok_or(format!(
@@ -319,25 +391,8 @@ async fn sync_to_tasks_with_base_url(
             GOOGLE_TASKS_LIST_NAME
         ))?;
     info!("Parent task list ID: {}", juggler_list.id);
-    // Get all existing tasks from the sync list
-    let tasks_url = format!("{base_url}/tasks/v1/lists/{}/tasks", juggler_list.id);
-    let tasks_response = client
-        .get(&tasks_url)
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-
-    if !tasks_response.status().is_success() {
-        return Err(format!(
-            "Google Tasks API request failed with status {}: {}",
-            tasks_response.status(),
-            tasks_response.text().await.unwrap_or_default()
-        )
-        .into());
-    }
-
-    let google_tasks: GoogleTasksListResponse = tasks_response.json().await?;
-    let existing_tasks = google_tasks.items.unwrap_or_default();
+    // Get all existing tasks from the sync list (across all pages)
+    let existing_tasks = fetch_all_tasks(&client, &juggler_list.id, access_token, base_url).await?;
 
     // Create a map of Google Task IDs to Google Tasks for quick lookup
     let mut google_task_map: std::collections::HashMap<String, GoogleTask> = existing_tasks
@@ -541,7 +596,7 @@ mod tests {
     const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
     use super::*;
     use chrono::TimeZone;
-    use wiremock::matchers::{bearer_token, body_string_contains, method, path};
+    use wiremock::matchers::{bearer_token, body_string_contains, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
@@ -1377,6 +1432,138 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("OAuth token refresh failed with status 401"));
+    }
+
+    #[tokio::test]
+    async fn test_tasklists_pagination_finds_list_on_second_page() {
+        let mock_server = MockServer::start().await;
+
+        // Page 2: contains the juggler list
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .and(query_param("pageToken", "p2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "j_list", "title": "juggler" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Page 1: no juggler list, provides nextPageToken
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "other_list_id", "title": "Other" }
+                ],
+                "nextPageToken": "p2"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Existing tasks for found list: empty, single page
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/j_list/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": []
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Create task
+        Mock::given(method("POST"))
+            .and(path("/tasks/v1/lists/j_list/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "created_on_second_page_list",
+                "title": "j:New",
+                "status": "needsAction"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut todos = vec![Todo {
+            title: "New".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        let result =
+            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            todos[0].google_task_id,
+            Some("created_on_second_page_list".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tasks_pagination_deletes_across_pages() {
+        let mock_server = MockServer::start().await;
+
+        // Tasklists: return juggler list
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [ { "id": "list1", "title": "juggler" } ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Tasks page 2: another task
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/list1/tasks"))
+            .and(bearer_token("test_token"))
+            .and(query_param("pageToken", "tok2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "task_b", "title": "j:B", "status": "needsAction" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Tasks page 1: one task, provides nextPageToken
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/list1/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "task_a", "title": "j:A", "status": "needsAction" }
+                ],
+                "nextPageToken": "tok2"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Expect deletes for both tasks since there are no local todos
+        Mock::given(method("DELETE"))
+            .and(path("/tasks/v1/lists/list1/tasks/task_a"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/tasks/v1/lists/list1/tasks/task_b"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let mut todos: Vec<Todo> = vec![];
+        let result =
+            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
