@@ -77,8 +77,8 @@ impl Todo {
 
             if total_seconds < 0 {
                 DueDateUrgency::Overdue
-            } else if total_seconds <= 86400 {
-                // 24 hours
+            } else if total_seconds <= 172800 {
+                // 48 hours
                 DueDateUrgency::DueSoon
             } else {
                 DueDateUrgency::Normal
