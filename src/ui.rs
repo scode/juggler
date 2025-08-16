@@ -661,7 +661,7 @@ impl<T: TodoEditor> App<T> {
             .collect();
 
         if !selected_indices.is_empty() {
-            // If there are selected items, snooze them
+            // If there are selected items, snooze them (keep selection for repeated operations)
             for i in selected_indices {
                 if let Some(item) = self.items.get_mut(i) {
                     let now = Utc::now();
@@ -678,7 +678,6 @@ impl<T: TodoEditor> App<T> {
                         now + duration
                     };
                     item.due_date = Some(new_due_date);
-                    item.selected = false; // Deselect after snoozing
                 }
             }
         } else if let Some(cursor_idx) = self.get_cursored_item_index() {
@@ -894,7 +893,6 @@ impl<T: TodoEditor> App<T> {
             for i in selected_indices {
                 if let Some(item) = self.items.get_mut(i) {
                     item.due_date = Some(target_due);
-                    item.selected = false;
                 }
             }
         } else if let Some(cursor_idx) = self.get_cursored_item_index()
@@ -1671,35 +1669,56 @@ mod tests {
         ];
         let mut app = App::new(items, NoOpEditor);
 
-        let before_snooze = Utc::now();
+        // 1) s (snooze +1d)
+        let before_s = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let after_snooze = Utc::now();
+        let after_s = Utc::now();
 
-        // First item (overdue): should be set to current time + 1 day
-        let new_due_date_1 = app.items[0].due_date.unwrap();
-        let expected_min_1 = before_snooze + Duration::days(1);
-        let expected_max_1 = after_snooze + Duration::days(1);
-        assert!(new_due_date_1 >= expected_min_1 && new_due_date_1 <= expected_max_1);
+        let d1_s = app.items[0].due_date.unwrap();
+        let d2_s = app.items[1].due_date.unwrap();
+        let d3_s = app.items[2].due_date.unwrap();
 
-        // Second item (future): should be original + 1 day
-        let new_due_date_2 = app.items[1].due_date.unwrap();
-        let expected_due_date_2 = future_date + Duration::days(1);
-        let diff_2 = (new_due_date_2 - expected_due_date_2).num_seconds().abs();
-        assert!(diff_2 < 5);
+        // First item (overdue): now + 1d (range)
+        assert!(d1_s >= before_s + Duration::days(1) && d1_s <= after_s + Duration::days(1));
+        // Second item (future): exact +1d
+        assert_eq!(d2_s, future_date + Duration::days(1));
+        // Third item (no due): now + 1d (range)
+        assert!(d3_s >= before_s + Duration::days(1) && d3_s <= after_s + Duration::days(1));
 
-        // Third item (no due date): should be set to current time + 1 day
-        let new_due_date_3 = app.items[2].due_date.unwrap();
-        let expected_min_3 = before_snooze + Duration::days(1);
-        let expected_max_3 = after_snooze + Duration::days(1);
-        assert!(new_due_date_3 >= expected_min_3 && new_due_date_3 <= expected_max_3);
+        // 2) S (unsnooze -1d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        let d1_uns = app.items[0].due_date.unwrap();
+        let d2_uns = app.items[1].due_date.unwrap();
+        let d3_uns = app.items[2].due_date.unwrap();
+        assert!((d1_uns - (d1_s - Duration::days(1))).num_seconds().abs() < 5);
+        assert!((d2_uns - (d2_s - Duration::days(1))).num_seconds().abs() < 5);
+        assert!((d3_uns - (d3_s - Duration::days(1))).num_seconds().abs() < 5);
+
+        // 3) p (postpone +7d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        let d1_p = app.items[0].due_date.unwrap();
+        let d2_p = app.items[1].due_date.unwrap();
+        let d3_p = app.items[2].due_date.unwrap();
+        assert!((d1_p - (d1_uns + Duration::days(7))).num_seconds().abs() < 5);
+        assert!((d2_p - (d2_uns + Duration::days(7))).num_seconds().abs() < 5);
+        assert!((d3_p - (d3_uns + Duration::days(7))).num_seconds().abs() < 5);
+
+        // 4) P (prepone -7d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        let d1_prep = app.items[0].due_date.unwrap();
+        let d2_prep = app.items[1].due_date.unwrap();
+        let d3_prep = app.items[2].due_date.unwrap();
+        assert!((d1_prep - (d1_p - Duration::days(7))).num_seconds().abs() < 5);
+        assert!((d2_prep - (d2_p - Duration::days(7))).num_seconds().abs() < 5);
+        assert!((d3_prep - (d3_p - Duration::days(7))).num_seconds().abs() < 5);
 
         // Fourth item (not selected): should remain unchanged
         assert_eq!(app.items[3].due_date, Some(past_date));
 
-        // All selected items should be deselected after snoozing
-        assert!(!app.items[0].selected);
-        assert!(!app.items[1].selected);
-        assert!(!app.items[2].selected);
+        // Selected items should remain selected to allow repeated operations
+        assert!(app.items[0].selected);
+        assert!(app.items[1].selected);
+        assert!(app.items[2].selected);
         assert!(!app.items[3].selected); // Wasn't selected to begin with
     }
 
