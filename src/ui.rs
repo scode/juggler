@@ -1714,12 +1714,79 @@ mod tests {
 
         // Fourth item (not selected): should remain unchanged
         assert_eq!(app.items[3].due_date, Some(past_date));
+    }
 
-        // Selected items should remain selected to allow repeated operations
+    #[test]
+    fn selection_persists_for_due_date_operations() {
+        use crossterm::event::KeyModifiers;
+
+        let items = vec![
+            Todo {
+                title: String::from("a"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true,
+                due_date: None,
+                google_task_id: None,
+            },
+            Todo {
+                title: String::from("b"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: true,
+                due_date: None,
+                google_task_id: None,
+            },
+            Todo {
+                title: String::from("c"),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            },
+        ];
+        let mut app = App::new(items, NoOpEditor);
+
+        // s (snooze +1d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
         assert!(app.items[0].selected);
         assert!(app.items[1].selected);
-        assert!(app.items[2].selected);
-        assert!(!app.items[3].selected); // Wasn't selected to begin with
+        assert!(!app.items[2].selected);
+
+        // S (unsnooze -1d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        assert!(app.items[0].selected);
+        assert!(app.items[1].selected);
+        assert!(!app.items[2].selected);
+
+        // p (postpone +7d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        assert!(app.items[0].selected);
+        assert!(app.items[1].selected);
+        assert!(!app.items[2].selected);
+
+        // P (prepone -7d)
+        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        assert!(app.items[0].selected);
+        assert!(app.items[1].selected);
+        assert!(!app.items[2].selected);
+
+        // t (custom delay) -> simulate entering "1d" and pressing Enter
+        app.prompt_overlay = Some(super::PromptOverlay {
+            message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
+            buffer: String::new(),
+            action: super::PromptAction::CustomDelay,
+        });
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.items[0].selected);
+        assert!(app.items[1].selected);
+        assert!(!app.items[2].selected);
     }
 
     #[test]
