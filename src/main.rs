@@ -8,6 +8,7 @@ mod config;
 mod google_tasks;
 mod oauth;
 mod store;
+mod time;
 mod ui;
 
 use clap::{Parser, Subcommand};
