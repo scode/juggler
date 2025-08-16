@@ -11,6 +11,9 @@ use ratatui::{
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 use crate::store::{TodoItem, edit_todo_item};
+#[cfg(test)]
+use crate::time::fixed_clock;
+use crate::time::{SharedClock, system_clock};
 
 pub trait TodoEditor {
     fn edit_todo(&self, todo: &Todo) -> io::Result<Todo>;
@@ -57,21 +60,17 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn format_relative_time(&self) -> Option<String> {
+    pub fn format_relative_time(&self, now: DateTime<Utc>) -> Option<String> {
         self.due_date.map(|due| {
-            let now = Utc::now();
             let duration = due.signed_duration_since(now);
-
             let time_str = format_duration_compact(duration);
-
             // Right-pad to 4 characters for alignment
             format!("{time_str:>4}")
         })
     }
 
-    pub fn due_date_urgency(&self) -> Option<DueDateUrgency> {
+    pub fn due_date_urgency(&self, now: DateTime<Utc>) -> Option<DueDateUrgency> {
         self.due_date.map(|due| {
-            let now = Utc::now();
             let duration = due.signed_duration_since(now);
             let total_seconds = duration.num_seconds();
 
@@ -86,12 +85,12 @@ impl Todo {
         })
     }
 
-    pub fn expanded_text(&self) -> Text<'_> {
+    pub fn expanded_text(&self, now: DateTime<Utc>) -> Text<'_> {
         let mut first_line_spans = Vec::new();
 
         // Add relative time if due date exists
-        if let Some(relative_time) = self.format_relative_time() {
-            let color = match self.due_date_urgency() {
+        if let Some(relative_time) = self.format_relative_time(now) {
+            let color = match self.due_date_urgency(now) {
                 Some(DueDateUrgency::Overdue) => Color::Red,
                 Some(DueDateUrgency::DueSoon) => Color::Yellow,
                 _ => Color::White,
@@ -137,12 +136,12 @@ impl Todo {
     }
 
     #[cfg(test)]
-    pub fn collapsed_summary(&self) -> Vec<Span<'_>> {
+    pub fn collapsed_summary(&self, now: DateTime<Utc>) -> Vec<Span<'_>> {
         let mut spans = Vec::new();
 
         // Add relative time if due date exists
-        if let Some(relative_time) = self.format_relative_time() {
-            let color = match self.due_date_urgency() {
+        if let Some(relative_time) = self.format_relative_time(now) {
+            let color = match self.due_date_urgency(now) {
                 Some(DueDateUrgency::Overdue) => Color::Red,
                 Some(DueDateUrgency::DueSoon) => Color::Yellow,
                 _ => Color::White,
@@ -233,6 +232,7 @@ pub struct App<T: TodoEditor> {
     pending_index: usize,
     done_index: usize,
     editor: T,
+    clock: SharedClock,
     prompt_overlay: Option<PromptOverlay>,
 }
 
@@ -244,6 +244,14 @@ enum Section {
 
 impl<T: TodoEditor> App<T> {
     pub fn new(items: Vec<Todo>, editor: T) -> Self {
+        Self::new_with_clock(items, editor, system_clock())
+    }
+
+    pub fn items(&self) -> &[Todo] {
+        &self.items
+    }
+
+    pub fn new_with_clock(items: Vec<Todo>, editor: T, clock: SharedClock) -> Self {
         let pending_count = items.iter().filter(|item| !item.done).count();
         let current_section = if pending_count > 0 {
             Section::Pending
@@ -259,12 +267,9 @@ impl<T: TodoEditor> App<T> {
             pending_index: 0,
             done_index: 0,
             editor,
+            clock,
             prompt_overlay: None,
         }
-    }
-
-    pub fn items(&self) -> &[Todo] {
-        &self.items
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -375,8 +380,9 @@ impl<T: TodoEditor> App<T> {
         first_line_spans.push(Span::raw(cursor_prefix));
         first_line_spans.push(Span::raw(status_box));
 
-        if let Some(relative_time) = todo.format_relative_time() {
-            let color = match todo.due_date_urgency() {
+        let now = self.clock.now();
+        if let Some(relative_time) = todo.format_relative_time(now) {
+            let color = match todo.due_date_urgency(now) {
                 Some(DueDateUrgency::Overdue) => Color::Red,
                 Some(DueDateUrgency::DueSoon) => Color::Yellow,
                 _ => Color::White,
@@ -413,7 +419,7 @@ impl<T: TodoEditor> App<T> {
 
         // For expanded items, append additional lines using expanded_text()
         if todo.expanded {
-            let expanded_text = todo.expanded_text();
+            let expanded_text = todo.expanded_text(now);
             for (i, line) in expanded_text.lines.iter().enumerate() {
                 if i == 0 {
                     continue; // skip first line, we already built it with cursor/checkbox
@@ -664,7 +670,7 @@ impl<T: TodoEditor> App<T> {
             // If there are selected items, snooze them (keep selection for repeated operations)
             for i in selected_indices {
                 if let Some(item) = self.items.get_mut(i) {
-                    let now = Utc::now();
+                    let now = self.clock.now();
                     let new_due_date = if let Some(current_due) = item.due_date {
                         if current_due <= now {
                             // If current due date is in the past, set to current time + snooze period
@@ -683,7 +689,7 @@ impl<T: TodoEditor> App<T> {
         } else if let Some(cursor_idx) = self.get_cursored_item_index() {
             // If no items are selected, snooze the item under cursor
             if let Some(item) = self.items.get_mut(cursor_idx) {
-                let now = Utc::now();
+                let now = self.clock.now();
                 let new_due_date = if let Some(current_due) = item.due_date {
                     if current_due <= now {
                         // If current due date is in the past, set to current time + snooze period
@@ -879,7 +885,7 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn delay_from_now(&mut self, duration: Duration) {
-        let now = Utc::now();
+        let now = self.clock.now();
         let target_due = now + duration;
 
         let selected_indices: Vec<usize> = self
@@ -1071,7 +1077,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            spans_to_string(&with_comment.collapsed_summary()),
+            spans_to_string(&with_comment.collapsed_summary(Utc::now())),
             "a (...)"
         );
 
@@ -1084,7 +1090,10 @@ mod tests {
             due_date: None,
             google_task_id: None,
         };
-        assert_eq!(spans_to_string(&without_comment.collapsed_summary()), "b");
+        assert_eq!(
+            spans_to_string(&without_comment.collapsed_summary(Utc::now())),
+            "b"
+        );
     }
 
     #[test]
@@ -1099,7 +1108,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            text_to_string(&todo.expanded_text()),
+            text_to_string(&todo.expanded_text(Utc::now())),
             "a >>>\n           line1\n           line2"
         );
     }
@@ -1126,7 +1135,8 @@ mod tests {
                 google_task_id: None,
             },
         ];
-        let app = App::new(items, NoOpEditor);
+        let base = Utc::now();
+        let app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
         assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
         assert_eq!(
@@ -1137,16 +1147,17 @@ mod tests {
 
     #[test]
     fn display_text_shows_relative_time_for_future_due_date() {
+        let base = Utc::now();
         let items = vec![Todo {
             title: String::from("future task"),
             comment: None,
             expanded: false,
             done: false,
             selected: false,
-            due_date: Some(chrono::Utc::now() + chrono::Duration::hours(50)),
+            due_date: Some(base + chrono::Duration::hours(50)),
             google_task_id: None,
         }];
-        let app = App::new(items, NoOpEditor);
+        let app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
         // 50h in the future should render as right-aligned "  2d"
         assert_eq!(
@@ -1157,6 +1168,7 @@ mod tests {
 
     #[test]
     fn expanded_display_includes_relative_time_and_comment_lines() {
+        let base = Utc::now();
         let items = vec![
             Todo {
                 title: String::from("a"),
@@ -1173,11 +1185,12 @@ mod tests {
                 expanded: true,
                 done: false,
                 selected: false,
-                due_date: Some(chrono::Utc::now() + chrono::Duration::hours(50)),
+                due_date: Some(base + chrono::Duration::hours(50)),
                 google_task_id: None,
             },
         ];
-        let app = App::new(items, NoOpEditor);
+
+        let app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
         assert_eq!(
             text_to_string(&app.display_text_internal(1)),
@@ -1240,7 +1253,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            spans_to_string(&collapsed_with_comment.collapsed_summary()),
+            spans_to_string(&collapsed_with_comment.collapsed_summary(Utc::now())),
             "Task with details (...)"
         );
 
@@ -1255,7 +1268,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            text_to_string(&expanded_with_comment.expanded_text()),
+            text_to_string(&expanded_with_comment.expanded_text(Utc::now())),
             "Task with details >>>\n           Some details"
         );
 
@@ -1270,7 +1283,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            spans_to_string(&no_comment.collapsed_summary()),
+            spans_to_string(&no_comment.collapsed_summary(Utc::now())),
             "Simple task"
         );
 
@@ -1285,7 +1298,7 @@ mod tests {
             google_task_id: None,
         };
         assert_eq!(
-            spans_to_string(&empty_comment.collapsed_summary()),
+            spans_to_string(&empty_comment.collapsed_summary(Utc::now())),
             "Task with empty comment"
         );
     }
@@ -1438,14 +1451,13 @@ mod tests {
             due_date: None,
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let base = Utc::now();
+        let mut app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
-        // snooze 1d when no due date -> now + 1d (range-checked)
-        let before1 = Utc::now();
+        // snooze 1d when no due date -> base + 1d (exact)
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let after1 = Utc::now();
         let due1 = app.items[0].due_date.expect("due set after snooze day");
-        assert!(due1 >= before1 + Duration::days(1) && due1 <= after1 + Duration::days(1));
+        assert_eq!(due1, base + Duration::days(1));
 
         // postpone 7d when due in future -> due + 7d (exact)
         let prev = due1;
@@ -1468,7 +1480,8 @@ mod tests {
 
     #[test]
     fn snooze_with_past_due_date() {
-        let past_date = Utc::now() - Duration::days(2); // 2 days ago
+        let base = Utc::now();
+        let past_date = base - Duration::days(2);
         let items = vec![Todo {
             title: String::from("overdue task"),
             comment: None,
@@ -1478,25 +1491,23 @@ mod tests {
             due_date: Some(past_date),
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let mut app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
-        let before_snooze = Utc::now();
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let after_snooze = Utc::now();
 
         let new_due_date = app.items[0].due_date.unwrap();
 
-        // Should be set to current time + 1 day, not past_date + 1 day
-        let expected_min = before_snooze + Duration::days(1);
-        let expected_max = after_snooze + Duration::days(1);
+        // Should be set to base + 1 day, not past_date + 1 day
+        let expected = base + Duration::days(1);
 
-        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
-        assert!(new_due_date > Utc::now()); // Should be in the future
+        assert_eq!(new_due_date, expected);
+        assert!(new_due_date > base); // Should be in the future
     }
 
     #[test]
     fn snooze_with_future_due_date() {
-        let future_date = Utc::now() + Duration::days(3); // 3 days from now
+        let base = Utc::now();
+        let future_date = base + Duration::days(3);
         let items = vec![Todo {
             title: String::from("future task"),
             comment: None,
@@ -1514,8 +1525,7 @@ mod tests {
         let expected_due_date = future_date + Duration::days(1);
 
         // Should add 1 day to the existing future due date
-        let diff = (new_due_date - expected_due_date).num_seconds().abs();
-        assert!(diff < 5); // Allow small timing differences
+        assert_eq!(new_due_date, expected_due_date);
         assert!(new_due_date > future_date); // Should be later than original
     }
 
@@ -1530,16 +1540,15 @@ mod tests {
             due_date: None,
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let app = App::new(items, NoOpEditor);
 
-        // Should set to current time + 1 day
-        let before_snooze = Utc::now();
+        // Should set to base + 1 day
+        let base = Utc::now();
+        let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let after_snooze = Utc::now();
         let new_due_date = app.items[0].due_date.unwrap();
-        let expected_min = before_snooze + Duration::days(1);
-        let expected_max = after_snooze + Duration::days(1);
-        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+        let expected = base + Duration::days(1);
+        assert_eq!(new_due_date, expected);
     }
 
     #[test]
@@ -1553,15 +1562,14 @@ mod tests {
             due_date: None,
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let app = App::new(items, NoOpEditor);
 
-        let before = Utc::now();
+        let base = Utc::now();
+        let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let after = Utc::now();
         let new_due_date = app.items[0].due_date.unwrap();
-        let expected_min = before + Duration::days(7);
-        let expected_max = after + Duration::days(7);
-        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+        let expected = base + Duration::days(7);
+        assert_eq!(new_due_date, expected);
     }
 
     #[test]
@@ -1575,15 +1583,14 @@ mod tests {
             due_date: None,
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let app = App::new(items, NoOpEditor);
 
-        let before = Utc::now();
+        let base = Utc::now();
+        let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let after = Utc::now();
         let new_due_date = app.items[0].due_date.unwrap();
-        let expected_min = before - Duration::days(7);
-        let expected_max = after - Duration::days(7);
-        assert!(new_due_date >= expected_min && new_due_date <= expected_max);
+        let expected = base - Duration::days(7);
+        assert_eq!(new_due_date, expected);
     }
 
     #[test]
@@ -1626,8 +1633,9 @@ mod tests {
 
     #[test]
     fn snooze_multiple_selected_items_mixed_due_dates() {
-        let past_date = Utc::now() - Duration::days(1); // 1 day ago
-        let future_date = Utc::now() + Duration::days(2); // 2 days from now
+        let base = Utc::now();
+        let past_date = base - Duration::days(1);
+        let future_date = base + Duration::days(2);
 
         let items = vec![
             Todo {
@@ -1667,50 +1675,49 @@ mod tests {
                 google_task_id: None,
             },
         ];
-        let mut app = App::new(items, NoOpEditor);
+        let app = App::new(items, NoOpEditor);
 
         // 1) s (snooze +1d)
-        let before_s = Utc::now();
+        let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let after_s = Utc::now();
 
         let d1_s = app.items[0].due_date.unwrap();
         let d2_s = app.items[1].due_date.unwrap();
         let d3_s = app.items[2].due_date.unwrap();
 
-        // First item (overdue): now + 1d (range)
-        assert!(d1_s >= before_s + Duration::days(1) && d1_s <= after_s + Duration::days(1));
+        // First item (overdue): base + 1d (exact)
+        assert_eq!(d1_s, base + Duration::days(1));
         // Second item (future): exact +1d
         assert_eq!(d2_s, future_date + Duration::days(1));
-        // Third item (no due): now + 1d (range)
-        assert!(d3_s >= before_s + Duration::days(1) && d3_s <= after_s + Duration::days(1));
+        // Third item (no due): base + 1d (exact)
+        assert_eq!(d3_s, base + Duration::days(1));
 
         // 2) S (unsnooze -1d)
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
         let d1_uns = app.items[0].due_date.unwrap();
         let d2_uns = app.items[1].due_date.unwrap();
         let d3_uns = app.items[2].due_date.unwrap();
-        assert!((d1_uns - (d1_s - Duration::days(1))).num_seconds().abs() < 5);
-        assert!((d2_uns - (d2_s - Duration::days(1))).num_seconds().abs() < 5);
-        assert!((d3_uns - (d3_s - Duration::days(1))).num_seconds().abs() < 5);
+        assert_eq!(d1_uns, d1_s - Duration::days(1));
+        assert_eq!(d2_uns, d2_s - Duration::days(1));
+        assert_eq!(d3_uns, d3_s - Duration::days(1));
 
         // 3) p (postpone +7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
         let d1_p = app.items[0].due_date.unwrap();
         let d2_p = app.items[1].due_date.unwrap();
         let d3_p = app.items[2].due_date.unwrap();
-        assert!((d1_p - (d1_uns + Duration::days(7))).num_seconds().abs() < 5);
-        assert!((d2_p - (d2_uns + Duration::days(7))).num_seconds().abs() < 5);
-        assert!((d3_p - (d3_uns + Duration::days(7))).num_seconds().abs() < 5);
+        assert_eq!(d1_p, d1_uns + Duration::days(7));
+        assert_eq!(d2_p, d2_uns + Duration::days(7));
+        assert_eq!(d3_p, d3_uns + Duration::days(7));
 
         // 4) P (prepone -7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
         let d1_prep = app.items[0].due_date.unwrap();
         let d2_prep = app.items[1].due_date.unwrap();
         let d3_prep = app.items[2].due_date.unwrap();
-        assert!((d1_prep - (d1_p - Duration::days(7))).num_seconds().abs() < 5);
-        assert!((d2_prep - (d2_p - Duration::days(7))).num_seconds().abs() < 5);
-        assert!((d3_prep - (d3_p - Duration::days(7))).num_seconds().abs() < 5);
+        assert_eq!(d1_prep, d1_p - Duration::days(7));
+        assert_eq!(d2_prep, d2_p - Duration::days(7));
+        assert_eq!(d3_prep, d3_p - Duration::days(7));
 
         // Fourth item (not selected): should remain unchanged
         assert_eq!(app.items[3].due_date, Some(past_date));
@@ -2014,7 +2021,8 @@ mod tests {
             due_date: None,
             google_task_id: None,
         }];
-        let mut app = App::new(items, NoOpEditor);
+        let base = Utc::now();
+        let mut app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
         // Activate custom delay prompt
         app.prompt_overlay = Some(super::PromptOverlay {
@@ -2027,14 +2035,11 @@ mod tests {
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
 
-        let before = Utc::now();
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        let after = Utc::now();
 
         let due = app.items[0].due_date.expect("due date should be set");
-        let expected_min = before + Duration::days(1);
-        let expected_max = after + Duration::days(1);
-        assert!(due >= expected_min && due <= expected_max);
+        let expected = base + Duration::days(1);
+        assert_eq!(due, expected);
         // Overlay should be cleared
         assert!(app.prompt_overlay.is_none());
     }
