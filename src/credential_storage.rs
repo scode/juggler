@@ -1,7 +1,7 @@
-//! Credential storage utilities for OAuth refresh tokens.
+//! Credential storage utilities for refresh tokens.
 //!
-//! This module centralizes the management of the Google Tasks OAuth refresh token
-//! using the operating system's secure credential store via the `keyring` crate.
+//! This module centralizes the management of a refresh token using the
+//! operating system's secure credential store via the `keyring` crate.
 //!
 //! Platform behavior:
 //! - macOS/iOS: Uses the system Keychain
@@ -15,28 +15,28 @@
 use keyring::Entry;
 
 /// Keychain/credential manager service name used for this application.
-pub const KEYRING_SERVICE: &str = "juggler";
+const KEYRING_SERVICE: &str = "juggler";
 
-/// Account identifier for the Google Tasks refresh token credential.
-pub const KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
+/// Account identifier for the stored refresh token credential.
+const KEYRING_ACCOUNT_REFRESH_TOKEN: &str = "refresh-token";
 
 fn keyring_entry() -> keyring::Result<Entry> {
-    Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS)
+    Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT_REFRESH_TOKEN)
 }
 
-/// Store the Google Tasks OAuth refresh token in the OS keychain.
+/// Store the refresh token in the OS keychain.
 pub fn store_refresh_token(refresh_token: &str) -> keyring::Result<()> {
     let entry = keyring_entry()?;
     entry.set_password(refresh_token)
 }
 
-/// Retrieve the Google Tasks OAuth refresh token from the OS keychain.
+/// Retrieve the refresh token from the OS keychain.
 pub fn get_refresh_token() -> keyring::Result<String> {
     let entry = keyring_entry()?;
     entry.get_password()
 }
 
-/// Delete the stored Google Tasks OAuth refresh token from the OS keychain.
+/// Delete the stored refresh token from the OS keychain.
 pub fn delete_refresh_token() -> keyring::Result<()> {
     let entry = keyring_entry()?;
     entry.delete_credential()

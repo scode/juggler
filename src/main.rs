@@ -15,8 +15,7 @@ mod ui;
 use clap::{Parser, Subcommand};
 use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
 use credential_storage::{
-    KEYRING_ACCOUNT_GOOGLE_TASKS, KEYRING_SERVICE, delete_refresh_token, get_refresh_token,
-    store_refresh_token,
+    delete_refresh_token, get_refresh_token, store_refresh_token,
 };
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
@@ -121,8 +120,8 @@ async fn main() -> io::Result<()> {
                     if debug_auth {
                         info!("Auth diagnostics:");
                         info!("  platform: {}", std::env::consts::OS);
-                        info!("  keychain service: {}", KEYRING_SERVICE);
-                        info!("  keychain account: {}", KEYRING_ACCOUNT_GOOGLE_TASKS);
+                        info!("  keychain service: {}", "juggler");
+                        info!("  keychain account: {}", "refresh-token");
                         match get_refresh_token() {
                             Ok(t) => {
                                 let len = t.len();
