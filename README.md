@@ -32,8 +32,11 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 
 5. **Sync your TODOs:**
    ```bash
-   ./target/release/juggler sync google-tasks \
-     --refresh-token "YOUR_REFRESH_TOKEN"
+   ./target/release/juggler sync google-tasks
+   ```
+6. Optional: **Log out** by removing the stored refresh token:
+   ```bash
+   ./target/release/juggler logout
    ```
 
 ## Installation
@@ -76,6 +79,7 @@ View available commands:
 ```bash
 juggler --help
 juggler login --help
+juggler logout --help
 juggler sync google-tasks --help
 ```
 
@@ -88,8 +92,6 @@ juggler sync google-tasks --help
 - `--port <PORT>`: Local callback port (default: 8080)
 
 **Sync options:**
-- `--refresh-token <REFRESH_TOKEN>`: OAuth refresh token (recommended)
-- `--token <TOKEN>`: OAuth access token (deprecated, expires quickly)
 - `--dry-run`: Log actions without executing them (safe testing mode)
 
 ## Google Tasks Synchronization
@@ -138,7 +140,7 @@ This will:
 
 You can now sync your TODOs with Google Tasks using:
 
-juggler sync google-tasks --refresh-token "1//04xxxxx-xxxxxxxxxx"
+juggler sync google-tasks
 ```
 
 **Benefits:**
@@ -167,30 +169,23 @@ For quick testing or one-time use, you can get a short-lived access token:
 
 Once you have your OAuth credentials, synchronize your TODOs with Google Tasks:
 
-#### Using Refresh Token (Recommended)
+#### Sync
 
 ```bash
-# Sync with Google Tasks using refresh token
-juggler sync google-tasks \
-  --refresh-token "1//YOUR_REFRESH_TOKEN"
-```
-
-**Example:**
-```bash
-juggler sync google-tasks \
-  --refresh-token "1//04xxxxx-xxxxxxxxxx"
+# Sync your TODOs with Google Tasks (uses refresh token from your system keychain)
+juggler sync google-tasks
 ```
 
 #### Using Access Token (Legacy)
 
 ```bash
-# Sync with Google Tasks using access token (deprecated)
-juggler sync google-tasks --token "YOUR_ACCESS_TOKEN_HERE"
+# Legacy access token flow has been removed. Please use:
+juggler sync google-tasks
 ```
 
 **Example:**
 ```bash
-juggler sync google-tasks --token "ya29.a0AfH6SMBxxxxx..."
+juggler sync google-tasks
 ```
 
 #### Dry-Run Mode
@@ -198,13 +193,8 @@ juggler sync google-tasks --token "ya29.a0AfH6SMBxxxxx..."
 Test your sync operations without making actual changes:
 
 ```bash
-# Dry-run mode with refresh token (recommended)
-RUST_LOG=info juggler sync google-tasks \
-  --refresh-token "1//YOUR_REFRESH_TOKEN" \
-  --dry-run
-
-# Dry-run mode with access token (legacy)
-RUST_LOG=info juggler sync google-tasks --token "YOUR_TOKEN" --dry-run
+# Dry-run mode
+RUST_LOG=info juggler sync google-tasks --dry-run
 ```
 
 In dry-run mode, all API actions are logged but not executed. This allows you to:
@@ -218,26 +208,17 @@ Juggler uses Rust's standard logging infrastructure. Control logging output with
 
 **Basic logging (recommended):**
 ```bash
-# With refresh token
-RUST_LOG=info juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN"
-
-# With access token (legacy)
-RUST_LOG=info juggler sync google-tasks --token "YOUR_TOKEN"
+RUST_LOG=info juggler sync google-tasks
 ```
 
 **Debug logging (verbose):**
 ```bash
-# With refresh token
-RUST_LOG=debug juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN"
+RUST_LOG=debug juggler sync google-tasks
 ```
 
 **Silent mode (errors only):**
 ```bash
-# With refresh token
-RUST_LOG=error juggler sync google-tasks \
-  --refresh-token "YOUR_REFRESH_TOKEN"
+RUST_LOG=error juggler sync google-tasks
 ```
 
 **Log output includes:**
@@ -273,13 +254,7 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - **Never commit OAuth credentials** to version control
 - **Use refresh tokens** for persistent access (recommended approach)
 - **Access tokens expire** (typically 1 hour) but refresh tokens provide long-term access
-- **Store credentials securely** and consider using environment variables:
-  ```bash
-  export JUGGLER_REFRESH_TOKEN="1//YOUR_REFRESH_TOKEN"
-  
-  juggler sync google-tasks \
-    --refresh-token "$JUGGLER_REFRESH_TOKEN"
-  ```
+- **Storage**: Refresh tokens are stored securely in your system keychain via the keyring crate after running `juggler login`. To refresh or reset, run `juggler login` again.
 
 ### Troubleshooting
 
@@ -288,8 +263,7 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - Make sure you're signed into the same Google account you used to get the token
 
 **"Invalid token" or authentication errors**
-- **Using refresh token**: Your OAuth credentials may be invalid or expired. Verify your refresh token
-- **Using access token**: Your access token has expired (they last ~1 hour) - get a new one from the [OAuth Playground](https://developers.google.com/oauthplayground/)
+- If you see authentication errors, run `juggler login` again to refresh the stored credentials. You can also revoke the app's access at https://myaccount.google.com/permissions and then run `juggler login` again.
 - Make sure you selected the `https://www.googleapis.com/auth/tasks` scope when getting your credentials
 - For refresh tokens, check that you copied the refresh token value (starts with `1//`)
 
@@ -301,13 +275,7 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - Check that your local TODOs.yaml file is valid YAML
 - Use `--dry-run` mode first to see what would happen:
   ```bash
-  # With refresh token
-  RUST_LOG=info juggler sync google-tasks \
-    --refresh-token "YOUR_REFRESH_TOKEN" \
-    --dry-run
-  
-  # With access token (legacy)
-  RUST_LOG=info juggler sync google-tasks --token "YOUR_TOKEN" --dry-run
+  RUST_LOG=info juggler sync google-tasks --dry-run
   ```
 - Try removing `google_task_id` fields from your YAML to force re-creation of tasks
 

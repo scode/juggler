@@ -341,13 +341,7 @@ async fn create_google_task(
     Ok(())
 }
 
-pub async fn sync_to_tasks(
-    todos: &mut [Todo],
-    access_token: &str,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    sync_to_tasks_with_base_url(todos, access_token, dry_run, GOOGLE_TASKS_BASE_URL).await
-}
+// legacy access-token sync removed; use OAuth-based sync_to_tasks_with_oauth
 
 pub async fn sync_to_tasks_with_oauth(
     todos: &mut [Todo],
