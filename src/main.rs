@@ -14,9 +14,7 @@ mod ui;
 
 use clap::{Parser, Subcommand};
 use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
-use credential_storage::{
-    delete_refresh_token, get_refresh_token, store_refresh_token,
-};
+use credential_storage::{delete_refresh_token, get_refresh_token, store_refresh_token};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
@@ -133,12 +131,11 @@ async fn main() -> io::Result<()> {
                         }
                     }
 
-                    // Always use refresh token from the system keychain
                     let refresh_token = match get_refresh_token() {
                         Ok(t) => t,
                         Err(_) => {
                             error!(
-                                "No refresh token found in keychain. Run `juggler login` to authenticate. If the issue persists, try `juggler logout` then `juggler login`."
+                                "No refresh token found in keychain. Run `juggler login` to authenticate."
                             );
                             return Err(io::Error::other(
                                 "Missing or unreadable refresh token in keychain",

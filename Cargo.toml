@@ -36,6 +36,7 @@ keyring = { version = "3", features = [
     "apple-native",
     "windows-native",
     "sync-secret-service",
+    "vendored",
 ] }
 
 [dev-dependencies]

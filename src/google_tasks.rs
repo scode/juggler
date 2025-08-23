@@ -341,8 +341,6 @@ async fn create_google_task(
     Ok(())
 }
 
-// legacy access-token sync removed; use OAuth-based sync_to_tasks_with_oauth
-
 pub async fn sync_to_tasks_with_oauth(
     todos: &mut [Todo],
     oauth_client: GoogleOAuthClient,
