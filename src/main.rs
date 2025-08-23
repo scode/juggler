@@ -5,6 +5,7 @@ use std::io;
 use log::{error, info};
 
 mod config;
+mod credential_storage;
 mod google_tasks;
 mod oauth;
 mod store;
@@ -13,9 +14,8 @@ mod ui;
 
 use clap::{Parser, Subcommand};
 use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
-use google_tasks::{
-    GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks, sync_to_tasks_with_oauth,
-};
+use credential_storage::{delete_refresh_token, get_refresh_token, store_refresh_token};
+use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
 use ui::{App, ExternalEditor};
@@ -38,21 +38,17 @@ enum Commands {
         #[arg(long, default_value = "8080", help = "Local port for OAuth callback")]
         port: u16,
     },
+    Logout,
 }
 
 #[derive(Subcommand)]
 enum SyncService {
     #[command(name = "google-tasks")]
     GoogleTasks {
-        #[arg(
-            long,
-            help = "OAuth access token for Google Tasks API (deprecated, use --refresh-token instead)"
-        )]
-        token: Option<String>,
-        #[arg(long, help = "OAuth refresh token for Google Tasks API")]
-        refresh_token: Option<String>,
         #[arg(long, help = "Log actions without executing them")]
         dry_run: bool,
+        #[arg(long, help = "Print keychain diagnostics for authentication")]
+        debug_auth: bool,
     },
 }
 
@@ -72,24 +68,25 @@ async fn main() -> io::Result<()> {
             match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
-                    println!("\nYou can now sync your TODOs with Google Tasks using:");
-                    println!();
-                    println!(
-                        "juggler sync google-tasks --refresh-token \"{}\"",
-                        result.refresh_token
-                    );
-                    println!();
-                    println!(
-                        "💡 Tip: Save this refresh token securely. It provides long-term access without needing to re-authenticate."
-                    );
-                    println!();
-                    println!("For security, consider storing it as an environment variable:");
-                    println!("export JUGGLER_REFRESH_TOKEN=\"{}\"", result.refresh_token);
-                    println!();
-                    println!("Then sync with:");
-                    println!(
-                        "juggler sync google-tasks --refresh-token \"$JUGGLER_REFRESH_TOKEN\""
-                    );
+                    match store_refresh_token(&result.refresh_token) {
+                        Ok(()) => {
+                            println!(
+                                "\nYour refresh token has been saved securely in your system keychain."
+                            );
+                            println!("You can now sync your TODOs with:");
+                            println!();
+                            println!("juggler sync google-tasks");
+                            println!();
+                            println!("Use --dry-run to preview changes:");
+                            println!("juggler sync google-tasks --dry-run");
+                        }
+                        Err(e) => {
+                            error!("Failed to store refresh token in keyring: {e}");
+                            return Err(io::Error::other(
+                                "Failed to store refresh token in keyring",
+                            ));
+                        }
+                    }
                 }
                 Err(e) => {
                     error!("Authentication failed: {e}");
@@ -97,52 +94,66 @@ async fn main() -> io::Result<()> {
                 }
             }
         }
+        Some(Commands::Logout) => match delete_refresh_token() {
+            Ok(()) => {
+                println!("Logged out: refresh token removed from keychain.");
+            }
+            Err(e) => {
+                error!("Failed to delete refresh token from keychain: {e}");
+                return Err(io::Error::other(
+                    "Failed to delete refresh token from keychain",
+                ));
+            }
+        },
         Some(Commands::Sync { service }) => {
             // CLI mode: handle sync commands
             match service {
                 SyncService::GoogleTasks {
-                    token,
-                    refresh_token,
                     dry_run,
+                    debug_auth,
                 } => {
                     let mut todos = load_todos(&todos_file)?;
 
                     info!("Syncing TODOs with Google Tasks...");
-
-                    // Determine authentication method
-                    match (token, refresh_token) {
-                        // Legacy bearer token authentication
-                        (Some(token), None) => {
-                            info!("Using bearer token authentication (deprecated)");
-                            if let Err(e) = sync_to_tasks(&mut todos, &token, dry_run).await {
-                                error!("Error syncing with Google Tasks: {e}");
-                                return Err(io::Error::other(e.to_string()));
+                    if debug_auth {
+                        info!("Auth diagnostics:");
+                        info!("  platform: {}", std::env::consts::OS);
+                        info!("  keychain service: {}", "juggler");
+                        info!("  keychain account: {}", "refresh-token");
+                        match get_refresh_token() {
+                            Ok(t) => {
+                                let len = t.len();
+                                info!("  refresh token: [PRESENT] length={} chars", len);
+                            }
+                            Err(e) => {
+                                error!("  refresh token: [ERROR] {}", e);
                             }
                         }
-                        // OAuth refresh token authentication
-                        (None, Some(refresh_token)) => {
-                            info!("Using OAuth refresh token authentication");
-                            let credentials = GoogleOAuthCredentials {
-                                client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
-                                refresh_token,
-                            };
-                            let oauth_client = GoogleOAuthClient::new(credentials);
+                    }
 
-                            if let Err(e) =
-                                sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await
-                            {
-                                error!("Error syncing with Google Tasks: {e}");
-                                return Err(io::Error::other(e.to_string()));
-                            }
+                    let refresh_token = match get_refresh_token() {
+                        Ok(t) => t,
+                        Err(_) => {
+                            error!(
+                                "No refresh token found in keychain. Run `juggler login` to authenticate."
+                            );
+                            return Err(io::Error::other(
+                                "Missing or unreadable refresh token in keychain",
+                            ));
                         }
-                        // Invalid combination of arguments
-                        _ => {
-                            error!("Invalid authentication configuration. Either provide:");
-                            error!("  --token <TOKEN> (deprecated)");
-                            error!("  OR");
-                            error!("  --refresh-token <REFRESH_TOKEN>");
-                            return Err(io::Error::other("Invalid authentication configuration"));
-                        }
+                    };
+
+                    let credentials = GoogleOAuthCredentials {
+                        client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+                        refresh_token,
+                    };
+                    let oauth_client = GoogleOAuthClient::new(credentials);
+
+                    if let Err(e) =
+                        sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await
+                    {
+                        error!("Error syncing with Google Tasks: {e}");
+                        return Err(io::Error::other(e.to_string()));
                     }
 
                     // Save the updated todos with new google_task_ids

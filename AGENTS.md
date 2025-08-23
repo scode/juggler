@@ -32,7 +32,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Build: `cargo build --release`
 - Run TUI: `cargo run` (or `./target/release/juggler`)
 - Login (browser OAuth): `cargo run -- login` (optional `--port 8080`)
-- Sync (recommended): `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>`
+- Sync (recommended): `cargo run -- sync google-tasks`
 - Dry-run: append `--dry-run`
 - Logging: prefix with `RUST_LOG=info|debug`
 - Lint/format: `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt`
@@ -61,8 +61,9 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 ### Google Tasks integration
 - List name: `juggler` (see `config.rs`)
 - One-way sync: local YAML is authoritative; remote is overwritten
-- Auth: PKCE browser login to obtain refresh token; or legacy short-lived access token
-- Recommended usage: `--refresh-token <token>`; optionally set env `JUGGLER_REFRESH_TOKEN`
+- Auth: PKCE browser login stores a refresh token in the OS keychain via the `keyring` crate; sync reads it automatically
+- Usage: run `juggler login` once, then `juggler sync google-tasks` (no flags)
+- Logout support: `cargo run -- logout` deletes the stored refresh token from the system keychain
 - Local callback server default port: 8080 (configurable via `--port`)
 - Dry-run shows intended operations without side effects
 
@@ -71,7 +72,8 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `ui.rs`: Owns `App` state and rendering. Handles input loop, selection, toggling, snoozing, and invoking external editor via `store` abstraction.
 - `store.rs`: Defines `TodoItem` and list container, YAML serialization/deserialization, load/save, archival, and editor integration. Uses tempfiles + atomic rename.
 - `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest` and structured logging.
-- `oauth.rs`: Implements public-client PKCE OAuth, spawns local HTTP server for redirect, opens browser (`open` crate), returns refresh token and metadata.
+- `oauth.rs`: Implements public-client PKCE OAuth, spawns local HTTP server for redirect, opens browser (`open` crate).
+- `credential_storage.rs`: Keyring-based storage for OAuth refresh tokens (service/account constants and store/get/delete helpers).
 - `config.rs`: Path helpers, constants like `GOOGLE_TASKS_LIST_NAME` and OAuth client id.
 
 ### Common agent workflows
@@ -107,6 +109,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 ### Quick commands (copy/paste)
 - TUI: `cargo run`
 - Login: `cargo run -- login`
-- Sync (refresh token): `RUST_LOG=info cargo run -- sync google-tasks --refresh-token "$JUGGLER_REFRESH_TOKEN"`
+- Logout: `cargo run -- logout`
+- Sync: `RUST_LOG=info cargo run -- sync google-tasks`
 - Dry-run: append `--dry-run`
 - Clean build + lint: `cargo clean && cargo build && cargo fmt && cargo clippy --all-targets --all-features -- -D warnings`

@@ -12,19 +12,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **CLI Commands:**
 
-*OAuth Refresh Token Authentication (Recommended):*
-- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>` - Sync with Google Tasks using OAuth
-- `cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN> --dry-run` - Test sync without changes
-- `RUST_LOG=info cargo run -- sync google-tasks --refresh-token <REFRESH_TOKEN>` - Sync with logging
+*Sync using stored refresh token (via system keychain):*
+- `cargo run -- sync google-tasks` - Sync with Google Tasks using refresh token from keyring
+- `cargo run -- sync google-tasks --dry-run` - Test sync without changes
+- `RUST_LOG=info cargo run -- sync google-tasks` - Sync with logging
 
 *Browser OAuth Login (Recommended for first-time setup):*
-- `cargo run -- login` - Interactive browser-based OAuth authentication
+- `cargo run -- login` - Interactive browser-based OAuth authentication (stores refresh token in system keychain)
 - `cargo run -- login --port 8080` - OAuth login with custom callback port
-
-*Legacy Bearer Token Authentication (Deprecated):*
-- `cargo run -- sync google-tasks --token <TOKEN>` - Sync with Google Tasks using bearer token (deprecated)
-- `cargo run -- sync google-tasks --token <TOKEN> --dry-run` - Test sync without changes (deprecated)
-- `RUST_LOG=info cargo run -- sync google-tasks --token <TOKEN>` - Sync with logging (deprecated)
+- `cargo run -- logout` - Remove stored refresh token from system keychain
 
 **IMPORTANT**: ALWAYS run `cargo fmt` and `cargo clippy` after making changes and tests pass.
 
@@ -39,6 +35,7 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **ui.rs**: TUI implementation with App struct, event handling, rendering logic, and keyboard shortcuts
 - **google_tasks.rs**: Google Tasks API integration with OAuth client, sync operations, and task mapping
 - **oauth.rs**: OAuth 2.0 PKCE flow implementation with local HTTP server for browser authentication
+- **credential_storage.rs**: Keyring-based storage for OAuth refresh tokens (service/account constants and store/get/delete helpers)
 - **config.rs**: Application constants including API URLs, OAuth client ID, and file path management functions
 
 ### Architectural Patterns
@@ -54,9 +51,10 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 ### Google Tasks Integration
 
 - **One-way sync**: Local YAML is authoritative, changes push to Google Tasks
-- **Authentication**: OAuth refresh token (recommended) or bearer token (deprecated)
+- **Authentication**: OAuth refresh token stored in the OS keychain via the `keyring` crate (no CLI token flags)
 - **OAuth flow**: PKCE-based browser authentication with local HTTP server callback
 - **Token management**: Automatic access token refresh with 5-minute buffer and caching
+- **Logout support**: `cargo run -- logout` deletes the stored refresh token from the system keychain
 - **API operations**: Create, update, delete tasks via Google Tasks REST API
 - **Dry-run mode**: Preview changes without execution
 - **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list with "j:" prefix
@@ -108,7 +106,7 @@ The application reads from `~/.juggler/TODOs.yaml` on startup and automatically 
 - UI tests verify keyboard interactions, display formatting, and state management
 - Google Tasks sync operations use wiremock for HTTP mocking without requiring real API tokens
 - OAuth client tests verify token refresh, caching, and error handling
-- Comprehensive test coverage for both OAuth and legacy bearer token authentication paths
+- Comprehensive test coverage for OAuth authentication paths
 - Tests validate dry-run mode functionality and logging behavior
 - Archive tests verify timestamped backup creation and content preservation
 
@@ -119,3 +117,4 @@ The application reads from `~/.juggler/TODOs.yaml` on startup and automatically 
 - **reqwest**: HTTP client for Google Tasks API interactions
 - **tokio**: Async runtime for API operations and OAuth flows
 - **serde/serde_yaml**: Serialization for YAML data persistence
+- **keyring**: OS keychain integration to securely store OAuth refresh tokens
