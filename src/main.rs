@@ -22,6 +22,21 @@ use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
 use ui::{App, ExternalEditor};
 
+fn create_oauth_client_from_keychain(
+    cred_store: &dyn CredentialStore,
+) -> Result<GoogleOAuthClient, io::Error> {
+    let refresh_token = cred_store.get_refresh_token().map_err(|_| {
+        io::Error::other("No refresh token found in keychain. Run `juggler login` to authenticate.")
+    })?;
+
+    let credentials = GoogleOAuthCredentials {
+        client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+        refresh_token,
+    };
+
+    Ok(GoogleOAuthClient::new(credentials))
+}
+
 #[derive(Parser)]
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
@@ -135,23 +150,13 @@ async fn main() -> io::Result<()> {
                         }
                     }
 
-                    let refresh_token = match cred_store.get_refresh_token() {
-                        Ok(t) => t,
-                        Err(_) => {
-                            error!(
-                                "No refresh token found in keychain. Run `juggler login` to authenticate."
-                            );
-                            return Err(io::Error::other(
-                                "Missing or unreadable refresh token in keychain",
-                            ));
+                    let oauth_client = match create_oauth_client_from_keychain(&cred_store) {
+                        Ok(client) => client,
+                        Err(e) => {
+                            error!("{}", e);
+                            return Err(e);
                         }
                     };
-
-                    let credentials = GoogleOAuthCredentials {
-                        client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
-                        refresh_token,
-                    };
-                    let oauth_client = GoogleOAuthClient::new(credentials);
 
                     if let Err(e) =
                         sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await
@@ -178,8 +183,42 @@ async fn main() -> io::Result<()> {
             let app_result = app.run(&mut terminal);
             ratatui::restore();
 
-            // Save todos when exiting
-            if let Err(e) = store_todos(app.items(), &todos_file) {
+            if app.should_sync_on_exit() {
+                // Always save local TODOs before attempting any sync. If the sync is slow
+                // and the user kills the process or something, we want to make sure we don't
+                // *locally* lose their changes.
+                if let Err(e) = store_todos(app.items(), &todos_file) {
+                    error!("Warning: Failed to save todos before sync: {e}");
+                }
+
+                info!("Syncing TODOs with Google Tasks on exit...");
+
+                match create_oauth_client_from_keychain(&cred_store) {
+                    Ok(oauth_client) => {
+                        let mut todos: Vec<_> = app.items().to_vec();
+
+                        let sync_result =
+                            sync_to_tasks_with_oauth(&mut todos, oauth_client, false).await;
+                        match sync_result {
+                            Ok(()) => {
+                                info!("Sync completed successfully!");
+                                // Save again to persist any updated google_task_id values
+                                if let Err(e) = store_todos(&todos, &todos_file) {
+                                    error!("Warning: Failed to save todos after sync: {e}");
+                                }
+                            }
+                            Err(e) => {
+                                error!("Error syncing with Google Tasks: {e}");
+                                // No additional save required here; we already saved before sync
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("{}", e);
+                        error!("Skipping sync. Todos were saved prior to sync attempt.");
+                    }
+                }
+            } else if let Err(e) = store_todos(app.items(), &todos_file) {
                 error!("Warning: Failed to save todos: {e}");
             }
 
