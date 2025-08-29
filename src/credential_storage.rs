@@ -14,6 +14,7 @@
 //! - These identifiers should remain stable across app versions to allow retrieval.
 
 use keyring::Entry;
+use log::info;
 use std::error::Error;
 use std::fmt;
 use std::sync::Mutex;
@@ -65,12 +66,20 @@ impl KeyringCredentialStore {
 
 impl CredentialStore for KeyringCredentialStore {
     fn store_refresh_token(&self, refresh_token: &str) -> Result<(), CredentialError> {
+        info!(
+            "Keyring: storing refresh token (service={}, account={})...",
+            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+        );
         let entry = self.make_entry()?;
         Entry::set_password(&entry, refresh_token)
             .map_err(|e| CredentialError::Backend(e.to_string()))
     }
 
     fn get_refresh_token(&self) -> Result<String, CredentialError> {
+        info!(
+            "Keyring: retrieving refresh token (service={}, account={})...",
+            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+        );
         let entry = self.make_entry()?;
         match Entry::get_password(&entry) {
             Ok(s) => Ok(s),
@@ -80,6 +89,10 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     fn delete_refresh_token(&self) -> Result<(), CredentialError> {
+        info!(
+            "Keyring: deleting refresh token (service={}, account={})...",
+            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+        );
         let entry = self.make_entry()?;
         Entry::delete_credential(&entry).map_err(|e| CredentialError::Backend(e.to_string()))
     }
