@@ -14,7 +14,9 @@ mod ui;
 
 use clap::{Parser, Subcommand};
 use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
-use credential_storage::{delete_refresh_token, get_refresh_token, store_refresh_token};
+use credential_storage::{
+    CredentialStore, KEYRING_ACCOUNT_GOOGLE_TASKS, KEYRING_SERVICE, KeyringCredentialStore,
+};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
@@ -60,6 +62,8 @@ async fn main() -> io::Result<()> {
     let cli = Cli::parse();
     let todos_file = get_todos_file_path()?;
 
+    let cred_store = KeyringCredentialStore::new();
+
     match cli.command {
         Some(Commands::Login { port }) => {
             // OAuth browser login flow
@@ -68,7 +72,7 @@ async fn main() -> io::Result<()> {
             match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
-                    match store_refresh_token(&result.refresh_token) {
+                    match cred_store.store_refresh_token(&result.refresh_token) {
                         Ok(()) => {
                             println!(
                                 "\nYour refresh token has been saved securely in your system keychain."
@@ -94,7 +98,7 @@ async fn main() -> io::Result<()> {
                 }
             }
         }
-        Some(Commands::Logout) => match delete_refresh_token() {
+        Some(Commands::Logout) => match cred_store.delete_refresh_token() {
             Ok(()) => {
                 println!("Logged out: refresh token removed from keychain.");
             }
@@ -118,9 +122,9 @@ async fn main() -> io::Result<()> {
                     if debug_auth {
                         info!("Auth diagnostics:");
                         info!("  platform: {}", std::env::consts::OS);
-                        info!("  keychain service: {}", "juggler");
-                        info!("  keychain account: {}", "refresh-token");
-                        match get_refresh_token() {
+                        info!("  keychain service: {}", KEYRING_SERVICE);
+                        info!("  keychain account: {}", KEYRING_ACCOUNT_GOOGLE_TASKS);
+                        match cred_store.get_refresh_token() {
                             Ok(t) => {
                                 let len = t.len();
                                 info!("  refresh token: [PRESENT] length={} chars", len);
@@ -131,7 +135,7 @@ async fn main() -> io::Result<()> {
                         }
                     }
 
-                    let refresh_token = match get_refresh_token() {
+                    let refresh_token = match cred_store.get_refresh_token() {
                         Ok(t) => t,
                         Err(_) => {
                             error!(

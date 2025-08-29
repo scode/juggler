@@ -73,7 +73,9 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `store.rs`: Defines `TodoItem` and list container, YAML serialization/deserialization, load/save, archival, and editor integration. Uses tempfiles + atomic rename.
 - `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest` and structured logging.
 - `oauth.rs`: Implements public-client PKCE OAuth, spawns local HTTP server for redirect, opens browser (`open` crate).
-- `credential_storage.rs`: Keyring-based storage for OAuth refresh tokens (service/account constants and store/get/delete helpers).
+- `credential_storage.rs`: `CredentialStore` trait with two implementations:
+  - `KeyringCredentialStore` (real; OS keychain via `keyring`)
+  - `InMemoryCredentialStore` (mock; used in tests). Provides store/get/delete refresh token.
 - `config.rs`: Path helpers, constants like `GOOGLE_TASKS_LIST_NAME` and OAuth client id.
 
 ### Common agent workflows
