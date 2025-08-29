@@ -32,9 +32,10 @@ impl TodoEditor for ExternalEditor {
     }
 }
 
-pub const HELP_TEXT: &str = "o-open, j/k-nav, x-select, e-done, E-edit, c-new, s:+1d, S:-1d, p:+7d, P:-7d, t-custom, q-quit. Ops affect selected; if none, the cursored item.";
+pub const HELP_TEXT: &str = "o-open, j/k-nav, x-select, e-done, E-edit, c-new, s:+1d, S:-1d, p:+7d, P:-7d, t-custom, q-quit, Q-quit+sync. Ops affect selected; if none, the cursored item.";
 
 pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
+pub const KEY_QUIT_WITH_SYNC: KeyCode = KeyCode::Char('Q');
 pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
 pub const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
 pub const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
@@ -226,6 +227,7 @@ impl Widget for PromptWidget {
 #[derive(Debug)]
 pub struct App<T: TodoEditor> {
     exit: bool,
+    sync_on_exit: bool,
     items: Vec<Todo>,
     pending_count: usize,
     current_section: Section,
@@ -251,6 +253,10 @@ impl<T: TodoEditor> App<T> {
         &self.items
     }
 
+    pub fn should_sync_on_exit(&self) -> bool {
+        self.sync_on_exit
+    }
+
     pub fn new_with_clock(items: Vec<Todo>, editor: T, clock: SharedClock) -> Self {
         let pending_count = items.iter().filter(|item| !item.done).count();
         let current_section = if pending_count > 0 {
@@ -261,6 +267,7 @@ impl<T: TodoEditor> App<T> {
 
         App {
             exit: false,
+            sync_on_exit: false,
             items,
             pending_count,
             current_section,
@@ -511,6 +518,7 @@ impl<T: TodoEditor> App<T> {
         //dbg!(key_event);
         match key_event.code {
             KEY_QUIT => self.exit(),
+            KEY_QUIT_WITH_SYNC => self.exit_with_sync(),
             KEY_NEXT_ITEM => self.select_next_internal(),
             KEY_PREVIOUS_ITEM => self.select_previous_internal(),
             KEY_TOGGLE_EXPAND => self.toggle_cursored_expanded(),
@@ -816,6 +824,11 @@ impl<T: TodoEditor> App<T> {
         self.exit = true;
     }
 
+    fn exit_with_sync(&mut self) {
+        self.exit = true;
+        self.sync_on_exit = true;
+    }
+
     fn get_cursored_item_index(&self) -> Option<usize> {
         let pending_items: Vec<(usize, &Todo)> = self
             .items
@@ -1063,6 +1076,56 @@ mod tests {
         assert!(app.items[0].expanded);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
         assert!(!app.items[0].expanded);
+    }
+
+    #[test]
+    fn quit_with_sync_key_sets_sync_flag() {
+        let items = vec![Todo {
+            title: String::from("test item"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        // Initially neither exit nor sync should be set
+        assert!(!app.exit);
+        assert!(!app.should_sync_on_exit());
+
+        // Press 'Q' to quit with sync
+        app.handle_key_event_internal(KeyEvent::new(KEY_QUIT_WITH_SYNC, KeyModifiers::NONE));
+
+        // Both exit and sync should be set
+        assert!(app.exit);
+        assert!(app.should_sync_on_exit());
+    }
+
+    #[test]
+    fn regular_quit_key_does_not_set_sync_flag() {
+        let items = vec![Todo {
+            title: String::from("test item"),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+        let mut app = App::new(items, NoOpEditor);
+
+        // Initially neither exit nor sync should be set
+        assert!(!app.exit);
+        assert!(!app.should_sync_on_exit());
+
+        // Press 'q' to quit normally
+        app.handle_key_event_internal(KeyEvent::new(KEY_QUIT, KeyModifiers::NONE));
+
+        // Only exit should be set, not sync
+        assert!(app.exit);
+        assert!(!app.should_sync_on_exit());
     }
 
     #[test]

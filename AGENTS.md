@@ -46,6 +46,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `E`: edit in external editor (`$EDITOR`, default "emacs")
 - `s` / `S`: snooze by 1 day / 1 week
 - `q`: quit and save
+- `Q`: quit, save locally, then sync to Google Tasks
 
 ### Data model and storage
 - File: `~/.juggler/TODOs.yaml`
@@ -92,6 +93,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 
 ### Invariants and pitfalls
 - Local YAML is the single source of truth; sync is strictly one-way to Google.
+- On TUI exit with sync (`Q`), local TODOs are always saved first, then sync runs; on successful sync, TODOs are saved again to persist `google_task_id` updates.
 - `google_task_id` must remain stable per item; deleting it forces re-creation on next sync.
 - Always keep atomic writes + archival semantics intact (tempfile, rename, timestamped backup).
 - Do not log secrets or full tokens; prefer `--dry-run` for previews.
