@@ -37,6 +37,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Logging: prefix with `RUST_LOG=info|debug`
 - Lint/format: `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt`
 - Tests: `cargo test`
+- CI runs automatically on pushes to `master`; trigger manually on PRs via GitHub Actions.
 
 ### TUI key bindings (core)
 - `j/k`: navigate

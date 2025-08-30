@@ -1,12 +1,10 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches:
-      - main
       - master
-      - develop
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
