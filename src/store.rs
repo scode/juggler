@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use crate::config::DEFAULT_EDITOR;
 #[cfg(test)]
 use crate::config::DEFAULT_TODOS_FILE;
+use crate::time::{Clock, SharedClock, system_clock};
 use crate::ui::Todo;
 
 /// Configuration constants are centralized in the `config` module
@@ -92,7 +93,11 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     Ok(updated_todo)
 }
 
-pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> io::Result<()> {
+pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
+    todos: &[Todo],
+    file_path: P,
+    clock: SharedClock,
+) -> io::Result<()> {
     let file_path = file_path.as_ref();
 
     // Ensure the directory exists with restricted permissions
@@ -111,7 +116,7 @@ pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> i
 
     // Archive existing file if it exists
     if file_path.exists() {
-        archive_todos_file(file_path)?;
+        archive_todos_file(file_path, clock.as_ref())?;
     }
 
     // Convert Todo items to TodoItem for serialization
@@ -158,7 +163,11 @@ pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> i
     Ok(())
 }
 
-fn archive_todos_file(file_path: &std::path::Path) -> io::Result<()> {
+pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> io::Result<()> {
+    store_todos_with_clock(todos, file_path, system_clock())
+}
+
+fn archive_todos_file(file_path: &std::path::Path, clock: &dyn Clock) -> io::Result<()> {
     let parent = file_path.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -166,7 +175,7 @@ fn archive_todos_file(file_path: &std::path::Path) -> io::Result<()> {
         )
     })?;
 
-    let now = Utc::now();
+    let now = clock.now();
     let timestamp_str = now.format("%Y-%m-%dT%H-%M-%S").to_string();
     let archive_name = format!("TODOs_{timestamp_str}.yaml");
     let archive_path = parent.join(archive_name);
@@ -178,6 +187,7 @@ fn archive_todos_file(file_path: &std::path::Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::fixed_clock;
 
     #[test]
     fn load_todos_parses_comments() {
@@ -267,7 +277,11 @@ comment: "Test comment"
                 expanded: false,
                 done: true,
                 selected: false,
-                due_date: Some(chrono::Utc::now()),
+                due_date: Some(
+                    chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
                 google_task_id: Some("google_task_123".to_string()),
             },
         ];
@@ -322,8 +336,14 @@ comment: "Test comment"
             google_task_id: None,
         }];
 
+        let fixed_now = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let clock = fixed_clock(fixed_now);
+
         // Store the initial todos
-        store_todos(&initial_todos, &test_file).expect("store initial todos");
+        store_todos_with_clock(&initial_todos, &test_file, clock.clone())
+            .expect("store initial todos");
 
         // Verify the file was created
         assert!(test_file.exists());
@@ -340,38 +360,18 @@ comment: "Test comment"
         }];
 
         // Store the updated todos (should create archive)
-        store_todos(&updated_todos, &test_file).expect("store updated todos");
+        store_todos_with_clock(&updated_todos, &test_file, clock.clone())
+            .expect("store updated todos");
 
         // Verify the updated file exists
         assert!(test_file.exists());
 
-        // Verify an archive file was created
-        let archive_files: Vec<_> = fs::read_dir(temp_dir.path())
-            .expect("read temp dir")
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("TODOs_")
-                    && name.ends_with(".yaml")
-                    && name != "test_todos.yaml"
-                {
-                    Some(name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        assert_eq!(
-            archive_files.len(),
-            1,
-            "Should have created exactly one archive file"
-        );
-        assert!(archive_files[0].starts_with("TODOs_"));
-        assert!(archive_files[0].ends_with(".yaml"));
+        // Verify the archive file was created with deterministic name
+        let expected_archive = format!("TODOs_{}.yaml", fixed_now.format("%Y-%m-%dT%H-%M-%S"));
+        let archive_path = temp_dir.path().join(&expected_archive);
+        assert!(archive_path.exists());
 
         // Verify the archive contains the initial content
-        let archive_path = temp_dir.path().join(&archive_files[0]);
         let archived_todos = load_todos(&archive_path).expect("load archived todos");
         assert_eq!(archived_todos.len(), 1);
         assert_eq!(archived_todos[0].title, "Initial todo");
@@ -381,7 +381,6 @@ comment: "Test comment"
         assert_eq!(current_todos.len(), 1);
         assert_eq!(current_todos[0].title, "Updated todo");
     }
-
     #[test]
     fn load_todos_handles_missing_file() {
         use tempfile::TempDir;
