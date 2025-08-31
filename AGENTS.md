@@ -21,7 +21,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `src/main.rs`: Entry point, Clap CLI, routing between TUI and commands
 - `src/ui.rs`: TUI app state, rendering, input, key bindings
 - `src/store.rs`: TODO model, YAML IO, editing via `$EDITOR`, archiving
-- `src/google_tasks.rs`: REST client, mapping, create/update/delete, dry-run
+- `src/google_tasks.rs`: REST client, mapping, create/update/delete, dry-run; uses mockable `Clock` for OAuth token expiry
 - `src/oauth.rs`: PKCE browser login, local HTTP callback server
 - `src/config.rs`: Constants (e.g., list name, OAuth client id), paths
 - `README.md`: User-facing how-to, commands, examples
@@ -72,7 +72,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `main.rs`: Defines Clap CLI (default TUI, `login`, `sync google-tasks`). Starts Tokio runtime. Dispatches to UI or command handlers.
 - `ui.rs`: Owns `App` state and rendering. Handles input loop, selection, toggling, snoozing, and invoking external editor via `store` abstraction.
 - `store.rs`: Defines `TodoItem` and list container, YAML serialization/deserialization, load/save, archival, and editor integration. Uses tempfiles + atomic rename.
-- `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest` and structured logging.
+- `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest`, structured logging, and a mockable `Clock` for token expiry.
 - `oauth.rs`: Implements public-client PKCE OAuth, spawns local HTTP server for redirect, opens browser (`open` crate).
 - `credential_storage.rs`: `CredentialStore` trait with two implementations:
   - `KeyringCredentialStore` (real; OS keychain via `keyring`)

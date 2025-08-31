@@ -5,6 +5,7 @@ use crate::config::{
     GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
     GOOGLE_TASKS_LIST_NAME,
 };
+use crate::time::{SharedClock, system_clock};
 use crate::ui::Todo;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -56,6 +57,7 @@ pub struct GoogleOAuthClient {
     cached_access_token: Option<String>,
     token_expires_at: Option<chrono::DateTime<Utc>>,
     oauth_token_url: String,
+    clock: SharedClock,
 }
 
 // Helper to display Option<String> values in logs
@@ -135,6 +137,7 @@ impl GoogleOAuthClient {
             cached_access_token: None,
             token_expires_at: None,
             oauth_token_url: GOOGLE_OAUTH_TOKEN_URL.to_string(),
+            clock: system_clock(),
         }
     }
 
@@ -142,6 +145,7 @@ impl GoogleOAuthClient {
     pub fn new_with_custom_oauth_url(
         credentials: GoogleOAuthCredentials,
         oauth_token_url: String,
+        clock: SharedClock,
     ) -> Self {
         Self {
             credentials,
@@ -149,12 +153,13 @@ impl GoogleOAuthClient {
             cached_access_token: None,
             token_expires_at: None,
             oauth_token_url,
+            clock,
         }
     }
 
     pub async fn get_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if let (Some(token), Some(expires_at)) = (&self.cached_access_token, &self.token_expires_at)
-            && Utc::now() < *expires_at - chrono::Duration::minutes(5)
+            && self.clock.now() < *expires_at - chrono::Duration::minutes(5)
         {
             return Ok(token.clone());
         }
@@ -188,7 +193,7 @@ impl GoogleOAuthClient {
 
         self.cached_access_token = Some(token_response.access_token.clone());
         self.token_expires_at = Some(
-            Utc::now()
+            self.clock.now()
                 + chrono::Duration::seconds(token_response.expires_in.unwrap_or(3600) as i64),
         );
 
@@ -587,9 +592,14 @@ mod tests {
     /// so use a fake test id here.
     const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
     use super::*;
-    use chrono::TimeZone;
+    use crate::time::fixed_clock;
+    use chrono::{TimeZone, Utc};
     use wiremock::matchers::{bearer_token, body_string_contains, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_clock() -> SharedClock {
+        fixed_clock(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
+    }
 
     #[test]
     fn test_due_dates_equivalent_date_only_and_tolerance() {
@@ -938,7 +948,8 @@ mod tests {
     #[tokio::test]
     async fn test_sync_with_due_dates() {
         let mock_server = MockServer::start().await;
-        let test_due_date = chrono::Utc::now() + chrono::Duration::days(1);
+        let base = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let test_due_date = base + chrono::Duration::days(1);
 
         // Mock the task lists endpoint
         Mock::given(method("GET"))
@@ -1083,8 +1094,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", mock_server.uri());
-        let mut oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         // Test initial state
         assert!(oauth_client.cached_access_token.is_none());
@@ -1104,11 +1118,16 @@ mod tests {
             refresh_token: "test_refresh_token".to_string(),
         };
 
-        let mut oauth_client = GoogleOAuthClient::new(credentials);
+        let clock = test_clock();
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            GOOGLE_OAUTH_TOKEN_URL.to_string(),
+            clock.clone(),
+        );
 
         // Manually set a cached token that's still valid
         oauth_client.cached_access_token = Some("cached_token".to_string());
-        oauth_client.token_expires_at = Some(Utc::now() + chrono::Duration::hours(1));
+        oauth_client.token_expires_at = Some(clock.now() + chrono::Duration::hours(1));
 
         // This should return the cached token without making a network request
         let token = oauth_client.get_access_token().await.unwrap();
@@ -1188,8 +1207,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
-        let oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         let result = sync_to_tasks_with_oauth_and_base_url(
             &mut todos,
@@ -1261,8 +1283,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
-        let oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         let result = sync_to_tasks_with_oauth_and_base_url(
             &mut todos,
@@ -1362,8 +1387,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
-        let oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         let result = sync_to_tasks_with_oauth_and_base_url(
             &mut todos,
@@ -1410,8 +1438,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
-        let oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         let result = sync_to_tasks_with_oauth_and_base_url(
             &mut todos,
@@ -1578,8 +1609,11 @@ mod tests {
         };
 
         let oauth_token_url = format!("{}/token", mock_server.uri());
-        let mut oauth_client =
-            GoogleOAuthClient::new_with_custom_oauth_url(credentials, oauth_token_url);
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            oauth_token_url,
+            test_clock(),
+        );
 
         // Test that token refresh failure is handled properly
         let result = oauth_client.get_access_token().await;
