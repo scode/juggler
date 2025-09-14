@@ -422,7 +422,11 @@ comment: "Test comment"
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(file_mode, 0o600, "expected file mode 0600, got {:o}", file_mode);
+        assert_eq!(
+            file_mode, 0o600,
+            "expected file mode 0600, got {:o}",
+            file_mode
+        );
 
         // Verify the created directory has 0700 permissions
         let dir_mode = fs::metadata(&nested_dir)
@@ -430,7 +434,11 @@ comment: "Test comment"
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(dir_mode, 0o700, "expected dir mode 0700, got {:o}", dir_mode);
+        assert_eq!(
+            dir_mode, 0o700,
+            "expected dir mode 0700, got {:o}",
+            dir_mode
+        );
     }
     #[test]
     fn load_todos_handles_missing_file() {
