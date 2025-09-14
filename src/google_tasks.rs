@@ -1315,6 +1315,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sync_dry_run_mode_no_update_calls() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the task lists endpoint
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "list1", "title": "juggler" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Existing tasks endpoint returns one task that needs updating
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/list1/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "t1", "title": "j:Old", "status": "needsAction" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Local todo has same id but different title, which would trigger an update
+        let mut todos = vec![Todo {
+            title: "New".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: Some("t1".to_string()),
+        }];
+
+        // Dry-run should NOT issue a PUT; no PUT mock is defined
+        let result =
+            sync_to_tasks_with_base_url(&mut todos, "test_token", true, &mock_server.uri()).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_sync_dry_run_mode_no_delete_calls() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the task lists endpoint
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "list1", "title": "juggler" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Existing tasks endpoint returns one orphaned task
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/list1/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "orphan", "title": "j:Orphan", "status": "needsAction" }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut todos: Vec<Todo> = vec![]; // No local todos -> would delete remotely
+
+        // Dry-run should NOT issue a DELETE; no DELETE mock is defined
+        let result =
+            sync_to_tasks_with_base_url(&mut todos, "test_token", true, &mock_server.uri()).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_sync_with_oauth_update_existing_task() {
         let mock_server = MockServer::start().await;
         let oauth_mock_server = MockServer::start().await;
