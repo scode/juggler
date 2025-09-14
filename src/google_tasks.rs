@@ -72,6 +72,14 @@ fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
         .map(|dt| dt.with_timezone(&Utc).date_naive())
 }
 
+// Parse a Google API 'due' RFC3339 string into a full UTC DateTime
+fn google_due_datetime_utc(google_due: &Option<String>) -> Option<chrono::DateTime<Utc>> {
+    google_due
+        .as_deref()
+        .and_then(|g| chrono::DateTime::parse_from_rfc3339(g).ok())
+        .map(|g| g.with_timezone(&Utc))
+}
+
 fn due_dates_same_day_utc(
     google_due: &Option<String>,
     todo_due: &Option<chrono::DateTime<Utc>>,
@@ -105,12 +113,11 @@ fn due_dates_equivalent(
     match (google_due, todo_due) {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
-        (Some(g), Some(t)) => {
+        (Some(_), Some(t)) => {
             if due_dates_same_day_utc(google_due, todo_due) {
                 return true;
             }
-            if let Ok(gdt) = chrono::DateTime::parse_from_rfc3339(g) {
-                let g_utc = gdt.with_timezone(&Utc);
+            if let Some(g_utc) = google_due_datetime_utc(google_due) {
                 let diff = t.signed_duration_since(g_utc).num_seconds().abs();
                 return diff < Duration::minutes(1).num_seconds();
             }
@@ -127,6 +134,14 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<Utc>>) -> Option<String> {
         let utc_dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc);
         utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
     })
+}
+
+// Compute absolute seconds difference between Google 'due' and Todo 'due'.
+fn due_diff_secs(google_due: &Option<String>, todo_due: &Option<chrono::DateTime<Utc>>) -> i64 {
+    match (google_due_datetime_utc(google_due), todo_due) {
+        (Some(g), Some(t)) => t.signed_duration_since(g).num_seconds().abs(),
+        _ => 0,
+    }
 }
 
 impl GoogleOAuthClient {
@@ -452,17 +467,7 @@ async fn sync_to_tasks_with_base_url(
                                 .due_date
                                 .map(|d| d.date_naive().to_string())
                                 .unwrap_or_else(|| "<none>".to_string());
-                            let diff_secs = google_task
-                                .due
-                                .as_deref()
-                                .and_then(|g| chrono::DateTime::parse_from_rfc3339(g).ok())
-                                .map(|g| {
-                                    let g_utc = g.with_timezone(&Utc);
-                                    todo.due_date
-                                        .map(|t| t.signed_duration_since(g_utc).num_seconds().abs())
-                                        .unwrap_or(0)
-                                })
-                                .unwrap_or(0);
+                            let diff_secs = due_diff_secs(&google_task.due, &todo.due_date);
                             info!(
                                 " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
                                 google_due_str, google_date, todo_date, diff_secs
