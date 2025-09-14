@@ -335,7 +335,6 @@ async fn create_google_task(
             "[DRY RUN] Would create task: {} with status: {}",
             new_task.title, new_task.status
         );
-        todo.google_task_id = Some(format!("dry-run-id-{}", todo.title.len()));
     } else {
         let response = client
             .post(&create_url)
@@ -939,15 +938,8 @@ mod tests {
         .await;
 
         assert!(result.is_ok());
-        // In dry run mode, a fake ID should be assigned
-        assert!(todos[0].google_task_id.is_some());
-        assert!(
-            todos[0]
-                .google_task_id
-                .as_ref()
-                .unwrap()
-                .starts_with("dry-run-id-")
-        );
+        // In dry run mode, no local mutation should occur
+        assert!(todos[0].google_task_id.is_none());
     }
 
     #[tokio::test]
@@ -1303,15 +1295,8 @@ mod tests {
         .await;
 
         assert!(result.is_ok());
-        // In dry run mode, a fake ID should be assigned
-        assert!(todos[0].google_task_id.is_some());
-        assert!(
-            todos[0]
-                .google_task_id
-                .as_ref()
-                .unwrap()
-                .starts_with("dry-run-id-")
-        );
+        // In dry run mode, no local mutation should occur
+        assert!(todos[0].google_task_id.is_none());
     }
 
     #[tokio::test]
