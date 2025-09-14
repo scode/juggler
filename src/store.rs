@@ -160,6 +160,13 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     // Atomically replace the original file
     fs::rename(temp_path, file_path)?;
 
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(file_path)?.permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(file_path, perms)?;
+    }
+
     Ok(())
 }
 
@@ -380,6 +387,50 @@ comment: "Test comment"
         let current_todos = load_todos(&test_file).expect("load current todos");
         assert_eq!(current_todos.len(), 1);
         assert_eq!(current_todos[0].title, "Updated todo");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_todos_sets_permissions_unix() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        // Create a temporary directory and a nested target path so the code
+        // creates the parent directory with restricted permissions.
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let nested_dir = temp_dir.path().join("nested");
+        let test_file = nested_dir.join("perms_todos.yaml");
+
+        let todos = vec![Todo {
+            title: "Perms todo".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }];
+
+        // Store the todos (this will create the parent directory if missing)
+        store_todos(&todos, &test_file).expect("store todos");
+
+        // Verify file exists and has 0600 permissions
+        assert!(test_file.exists());
+        let file_mode = fs::metadata(&test_file)
+            .expect("file metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(file_mode, 0o600, "expected file mode 0600, got {:o}", file_mode);
+
+        // Verify the created directory has 0700 permissions
+        let dir_mode = fs::metadata(&nested_dir)
+            .expect("dir metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(dir_mode, 0o700, "expected dir mode 0700, got {:o}", dir_mode);
     }
     #[test]
     fn load_todos_handles_missing_file() {
