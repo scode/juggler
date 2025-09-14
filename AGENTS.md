@@ -117,3 +117,9 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Sync: `RUST_LOG=info cargo run -- sync google-tasks`
 - Dry-run: append `--dry-run`
 - Clean build + lint: `cargo clean && cargo build && cargo fmt && cargo clippy --all-targets --all-features -- -D warnings`
+
+### Coding guidelines
+- Do not add comments that just state "what" something is doing, unless for some reason it is exceedingly unclear.
+- Do not add any comments that speak to the reader as if they are reviewing a diff. The comment should address
+  the reader as if they are reading a snapshot of the source code without history. For example, comments like
+  "moved this line here" make no sense because it references some action taken in a diff.
