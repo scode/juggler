@@ -1,5 +1,4 @@
-use env_logger::Builder;
-use log::LevelFilter;
+use env_logger::Env;
 use std::io;
 
 use log::{error, info};
@@ -71,8 +70,8 @@ enum SyncService {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let mut builder = Builder::from_default_env();
-    builder.filter(None, LevelFilter::Info).init();
+    let env = Env::default().filter_or("RUST_LOG", "info");
+    env_logger::Builder::from_env(env).init();
 
     let cli = Cli::parse();
     let todos_file = get_todos_file_path()?;

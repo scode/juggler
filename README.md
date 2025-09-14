@@ -205,14 +205,14 @@ In dry-run mode, all API actions are logged but not executed. This allows you to
 
 #### Logging Configuration
 
-Juggler uses Rust's standard logging infrastructure. Control logging output with the `RUST_LOG` environment variable:
+Juggler uses Rust's standard logging infrastructure (`env_logger`). Configure logging via the `RUST_LOG` environment variable. If `RUST_LOG` is not set, the default level is `info`.
 
-**Basic logging (recommended):**
+**Basic (default) level:**
 ```bash
 RUST_LOG=info juggler sync google-tasks
 ```
 
-**Debug logging (verbose):**
+**Increase verbosity (debug):**
 ```bash
 RUST_LOG=debug juggler sync google-tasks
 ```
@@ -220,6 +220,25 @@ RUST_LOG=debug juggler sync google-tasks
 **Silent mode (errors only):**
 ```bash
 RUST_LOG=error juggler sync google-tasks
+```
+
+**Applies to all commands (TUI, login, sync):**
+```bash
+# TUI
+RUST_LOG=debug juggler
+
+# OAuth login
+RUST_LOG=debug juggler login
+```
+
+**Module filters (advanced):**
+```bash
+RUST_LOG=juggler=debug,reqwest=warn juggler sync google-tasks
+```
+
+**Persist in shell (optional):**
+```bash
+export RUST_LOG=info
 ```
 
 **Log output includes:**
