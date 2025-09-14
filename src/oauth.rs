@@ -22,8 +22,10 @@ use url::Url;
 // Type alias to simplify complex type
 type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>;
 
-// Note: Users must provide their own OAuth credentials from Google Cloud Console
-// This is required for security and compliance with Google's OAuth policies
+// OAuth credentials (public desktop client) are embedded via constants in `config.rs`.
+// For native/desktop apps, Google treats clients as public and permits embedding the
+// client id and client secret with PKCE. See Google guidance:
+// https://developers.google.com/identity/protocols/oauth2/native-app
 
 #[derive(Debug)]
 pub struct OAuthResult {

@@ -23,18 +23,16 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 
 2. **Create a "juggler" task list in [Google Tasks](https://tasks.google.com/)**
 
-3. **Set up Google OAuth credentials** (see detailed instructions below)
-
-4. **Authenticate with Google:**
+3. **Authenticate with Google:**
    ```bash
    ./target/release/juggler login
    ```
 
-5. **Sync your TODOs:**
+4. **Sync your TODOs:**
    ```bash
    ./target/release/juggler sync google-tasks
    ```
-6. Optional: **Log out** by removing the stored refresh token:
+5. Optional: **Log out** by removing the stored refresh token:
    ```bash
    ./target/release/juggler logout
    ```
@@ -113,58 +111,6 @@ Juggler can synchronize your TODOs to Google Tasks, pushing your local YAML todo
 3. This is where all your TODO items will be synchronized
 
 **That's it!** Now you can authenticate easily with `juggler login` (see below) or manually set up OAuth credentials.
-
-### Getting Your Google OAuth Credentials
-
-To sync with Google Tasks, you need OAuth credentials from Google. There are two approaches: using refresh tokens (recommended for persistent use) or access tokens (quick but expires in 1 hour).
-
-#### Method 1: Browser Login (Recommended)
-
-The simplest way to authenticate is using the built-in browser login flow:
-
-##### Step 1: Run Browser Authentication
-
-```bash
-# Launch browser-based authentication
-juggler login
-```
-
-This will:
-1. Start a local web server on port 8080 (customizable with `--port`)
-2. Open your default browser to Google's authentication page
-3. Guide you through the OAuth consent flow
-4. Display the credentials you need for syncing
-
-**Example output:**
-```bash
-🎉 Authentication successful!
-
-You can now sync your TODOs with Google Tasks using:
-
-juggler sync google-tasks
-```
-
-**Benefits:**
-- Secure PKCE OAuth flow
-- Automatic browser integration
-- One-time setup per machine
-- Long-term refresh tokens
-- No Google Cloud Console setup required
-
-#### Method 2: Quick Access Token (Legacy)
-
-For quick testing or one-time use, you can get a short-lived access token:
-
-1. Go to [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/)
-2. In the left panel, find **"Tasks API v1"** and expand it
-3. Check the box for: `https://www.googleapis.com/auth/tasks`
-4. Click **"Authorize APIs"**
-5. Sign in to your Google account when prompted
-6. Click **"Allow"** to grant access to your Google Tasks
-7. Click **"Exchange authorization code for tokens"**
-8. Copy the **"Access token"** value (starts with `ya29.`)
-
-**Note:** This token expires in about 1 hour and is only recommended for quick testing.
 
 ### Synchronizing TODOs
 

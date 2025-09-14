@@ -59,7 +59,7 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **Dry-run mode**: Preview changes without execution
 - **Task mapping**: Local TODOs map to Google Tasks in "juggler" task list with "j:" prefix
 - **ID tracking**: `google_task_id` field links local items to remote tasks
-- **Built-in OAuth client**: Uses hardcoded public client ID for seamless authentication
+- **Built-in OAuth client**: Uses a public desktop client id with PKCE for seamless authentication
 - **Embedded client secret for native app**: For desktop/native OAuth clients, the client secret is embedded via `GOOGLE_OAUTH_CLIENT_SECRET` and is always sent in token calls. This is acceptable and expected per Google's guidance for native apps using PKCE. See `https://developers.google.com/identity/protocols/oauth2/native-app`.
 
 ## Data Format and Storage
