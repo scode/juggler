@@ -139,26 +139,19 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     let target_dir = file_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
-    let temp_file = NamedTempFile::new_in(target_dir)?;
-    let temp_path = temp_file.path();
+    let mut temp_file = NamedTempFile::new_in(target_dir)?;
 
-    // Write content to temp file
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(temp_path)?;
+    {
+        let file = temp_file.as_file_mut();
+        file.write_all(yaml_content.as_bytes())?;
 
-    file.write_all(yaml_content.as_bytes())?;
-
-    // Ensure data is written to disk before rename
-    file.flush()?;
-    file.sync_all()?;
-
-    // Close the file explicitly
-    drop(file);
+        // Ensure data is written to disk before rename
+        file.flush()?;
+        file.sync_all()?;
+    }
 
     // Atomically replace the original file
-    fs::rename(temp_path, file_path)?;
+    temp_file.persist(file_path)?;
 
     #[cfg(unix)]
     {
