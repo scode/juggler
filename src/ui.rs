@@ -103,11 +103,7 @@ impl Todo {
         }
 
         first_line_spans.push(Span::raw(&self.title));
-        let has_comment = self
-            .comment
-            .as_ref()
-            .map(|c| !c.trim().is_empty())
-            .unwrap_or(false);
+        let has_comment = self.has_comment();
         if has_comment {
             first_line_spans.push(Span::raw(" >>>"));
         }
@@ -128,7 +124,6 @@ impl Todo {
         Text::from(lines)
     }
 
-    #[cfg(test)]
     pub fn has_comment(&self) -> bool {
         self.comment
             .as_ref()
@@ -409,11 +404,7 @@ impl<T: TodoEditor> App<T> {
             first_line_spans.push(Span::raw(&todo.title));
         }
 
-        let has_comment = todo
-            .comment
-            .as_ref()
-            .map(|c| !c.trim().is_empty())
-            .unwrap_or(false);
+        let has_comment = todo.has_comment();
         if has_comment {
             if todo.expanded {
                 first_line_spans.push(Span::raw(" >>>"));
