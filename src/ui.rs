@@ -766,41 +766,25 @@ impl<T: TodoEditor> App<T> {
                     self.pending_count = self.items.iter().filter(|item| !item.done).count();
 
                     // Move cursor to the newly created item
-                    if !self.items.is_empty() {
-                        // If the new item is not done, it will be in the pending section
-                        if !is_done {
-                            self.current_section = Section::Pending;
-                            // Find the position of the new item in the pending items
-                            let pending_items: Vec<_> = self
-                                .items
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, item)| !item.done)
-                                .collect();
-                            let new_item_idx = self.items.len() - 1;
-                            if let Some(pos) = pending_items
-                                .iter()
-                                .position(|(idx, _)| *idx == new_item_idx)
-                            {
-                                self.pending_index = pos;
-                            }
-                        } else {
-                            // If the new item is done, it will be in the done section
-                            self.current_section = Section::Done;
-                            // Find the position of the new item in the done items
-                            let done_items: Vec<_> = self
-                                .items
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, item)| item.done)
-                                .collect();
-                            let new_item_idx = self.items.len() - 1;
-                            if let Some(pos) =
-                                done_items.iter().position(|(idx, _)| *idx == new_item_idx)
-                            {
-                                self.done_index = pos;
-                            }
-                        }
+                    let new_item_idx = self.items.len() - 1;
+                    if !is_done {
+                        self.current_section = Section::Pending;
+                        self.pending_index = self
+                            .items
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, item)| !item.done)
+                            .position(|(idx, _)| idx == new_item_idx)
+                            .unwrap_or(0);
+                    } else {
+                        self.current_section = Section::Done;
+                        self.done_index = self
+                            .items
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, item)| item.done)
+                            .position(|(idx, _)| idx == new_item_idx)
+                            .unwrap_or(0);
                     }
                 }
             }
