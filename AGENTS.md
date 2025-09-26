@@ -123,3 +123,11 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Do not add any comments that speak to the reader as if they are reviewing a diff. The comment should address
   the reader as if they are reading a snapshot of the source code without history. For example, comments like
   "moved this line here" make no sense because it references some action taken in a diff.
+
+### Releases
+
+This project uses "dist" (cargo dist) - https://axodotdev.github.io/cargo-dist/ - for release management.
+
+.github/workflows/release.yml should never be directly modified - it is managed using dist.
+
+If dist-workspace.toml is modified, `dist init` must be run to apply resulting changes.
