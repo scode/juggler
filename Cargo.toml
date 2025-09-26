@@ -5,6 +5,7 @@ description = "TODO juggler"
 authors = ["Peter Schuller <peter.schuller@infidyne.com>"]
 license = "MIT"
 edition = "2024"
+repository = "https://github.com/scode/juggler"
 
 [dependencies]
 crossterm = "0"
@@ -42,3 +43,8 @@ keyring = { version = "3", features = [
 [dev-dependencies]
 wiremock = "0.6"
 tokio-test = "0.4"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
