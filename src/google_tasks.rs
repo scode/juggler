@@ -146,10 +146,10 @@ fn due_diff_secs(google_due: &Option<String>, todo_due: &Option<chrono::DateTime
 }
 
 impl GoogleOAuthClient {
-    pub fn new(credentials: GoogleOAuthCredentials) -> Self {
+    pub fn new(credentials: GoogleOAuthCredentials, client: reqwest::Client) -> Self {
         Self {
             credentials,
-            client: reqwest::Client::new(),
+            client,
             cached_access_token: None,
             token_expires_at: None,
             oauth_token_url: GOOGLE_OAUTH_TOKEN_URL.to_string(),
@@ -160,12 +160,13 @@ impl GoogleOAuthClient {
     #[cfg(test)]
     pub fn new_with_custom_oauth_url(
         credentials: GoogleOAuthCredentials,
+        client: reqwest::Client,
         oauth_token_url: String,
         clock: SharedClock,
     ) -> Self {
         Self {
             credentials,
-            client: reqwest::Client::new(),
+            client,
             cached_access_token: None,
             token_expires_at: None,
             oauth_token_url,
@@ -372,7 +373,8 @@ pub async fn sync_to_tasks_with_oauth_and_base_url(
     base_url: &str,
 ) -> Result<()> {
     let access_token = oauth_client.get_access_token().await?;
-    sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url).await
+    let client = &oauth_client.client;
+    sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url, client).await
 }
 
 async fn sync_to_tasks_with_base_url(
@@ -380,6 +382,7 @@ async fn sync_to_tasks_with_base_url(
     access_token: &str,
     dry_run: bool,
     base_url: &str,
+    client: &reqwest::Client,
 ) -> Result<()> {
     if dry_run {
         info!("Starting sync in DRY RUN mode - no changes will be made");
@@ -387,10 +390,8 @@ async fn sync_to_tasks_with_base_url(
         info!("Starting sync with Google Tasks");
     }
 
-    let client = reqwest::Client::new();
-
     // First, find the task list for synchronization (across all pages)
-    let all_tasklists = fetch_all_tasklists(&client, access_token, base_url).await?;
+    let all_tasklists = fetch_all_tasklists(client, access_token, base_url).await?;
     let juggler_list = all_tasklists
         .into_iter()
         .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
@@ -402,7 +403,7 @@ async fn sync_to_tasks_with_base_url(
         })?;
     info!("Parent task list ID: {}", juggler_list.id);
     // Get all existing tasks from the sync list (across all pages)
-    let existing_tasks = fetch_all_tasks(&client, &juggler_list.id, access_token, base_url).await?;
+    let existing_tasks = fetch_all_tasks(client, &juggler_list.id, access_token, base_url).await?;
 
     // Create a map of Google Task IDs to Google Tasks for quick lookup
     let mut google_task_map: std::collections::HashMap<String, GoogleTask> = existing_tasks
@@ -518,7 +519,7 @@ async fn sync_to_tasks_with_base_url(
                 } else {
                     // Task was deleted in Google Tasks, recreate it (one-way sync)
                     create_google_task(
-                        &client,
+                        client,
                         todo,
                         &juggler_list.id,
                         access_token,
@@ -531,7 +532,7 @@ async fn sync_to_tasks_with_base_url(
             None => {
                 // Todo doesn't have a Google Task ID, create a new task
                 create_google_task(
-                    &client,
+                    client,
                     todo,
                     &juggler_list.id,
                     access_token,
@@ -688,8 +689,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(todos[0].google_task_id, Some("new_task_id".to_string()));
@@ -722,9 +729,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "invalid_token", false, &mock_server.uri())
-                .await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "invalid_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -760,8 +772,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -827,8 +845,14 @@ mod tests {
             google_task_id: Some("existing_task_id".to_string()),
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
@@ -879,8 +903,14 @@ mod tests {
 
         let mut todos = vec![]; // No local todos
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
@@ -931,6 +961,7 @@ mod tests {
             "test_token",
             true, // dry_run = true
             &mock_server.uri(),
+            &reqwest::Client::new(),
         )
         .await;
 
@@ -993,8 +1024,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(todos[0].google_task_id, Some("new_task_id".to_string()));
@@ -1051,8 +1088,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(
@@ -1090,6 +1133,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", mock_server.uri());
         let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1115,6 +1159,7 @@ mod tests {
         let clock = test_clock();
         let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             GOOGLE_OAUTH_TOKEN_URL.to_string(),
             clock.clone(),
         );
@@ -1203,6 +1248,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
         let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1279,6 +1325,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
         let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1336,8 +1383,14 @@ mod tests {
         }];
 
         // Dry-run should NOT issue a PUT; no PUT mock is defined
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", true, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            true,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
@@ -1373,8 +1426,14 @@ mod tests {
         let mut todos: Vec<Todo> = vec![]; // No local todos -> would delete remotely
 
         // Dry-run should NOT issue a DELETE; no DELETE mock is defined
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", true, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            true,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
@@ -1459,6 +1518,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
         let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1510,6 +1570,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", oauth_mock_server.uri());
         let oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1589,8 +1650,14 @@ mod tests {
             google_task_id: None,
         }];
 
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
         assert!(result.is_ok());
         assert_eq!(
             todos[0].google_task_id,
@@ -1654,8 +1721,14 @@ mod tests {
             .await;
 
         let mut todos: Vec<Todo> = vec![];
-        let result =
-            sync_to_tasks_with_base_url(&mut todos, "test_token", false, &mock_server.uri()).await;
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
         assert!(result.is_ok());
     }
 
@@ -1681,6 +1754,7 @@ mod tests {
         let oauth_token_url = format!("{}/token", mock_server.uri());
         let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
             credentials,
+            reqwest::Client::new(),
             oauth_token_url,
             test_clock(),
         );
@@ -1716,7 +1790,7 @@ mod tests {
             refresh_token: "test_refresh_token".to_string(),
         };
 
-        let oauth_client = GoogleOAuthClient::new(credentials.clone());
+        let oauth_client = GoogleOAuthClient::new(credentials.clone(), reqwest::Client::new());
 
         // Test initial state
         assert_eq!(oauth_client.credentials.client_id, credentials.client_id);

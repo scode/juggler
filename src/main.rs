@@ -26,6 +26,7 @@ use ui::{App, ExternalEditor};
 
 fn create_oauth_client_from_keychain(
     cred_store: &dyn CredentialStore,
+    http_client: reqwest::Client,
 ) -> Result<GoogleOAuthClient> {
     let refresh_token = cred_store.get_refresh_token().map_err(|_| {
         JugglerError::config(
@@ -38,7 +39,7 @@ fn create_oauth_client_from_keychain(
         refresh_token,
     };
 
-    Ok(GoogleOAuthClient::new(credentials))
+    Ok(GoogleOAuthClient::new(credentials, http_client))
 }
 
 #[derive(Parser)]
@@ -82,13 +83,14 @@ async fn main() -> Result<()> {
     let todos_file = get_todos_file_path()?;
 
     let cred_store = KeyringCredentialStore::new();
+    let http_client = reqwest::Client::new();
 
     match cli.command {
         Some(Commands::Login { port }) => {
             // OAuth browser login flow
             info!("Starting OAuth login flow...");
 
-            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
+            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port, &http_client).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
                     match cred_store.store_refresh_token(&result.refresh_token) {
@@ -153,13 +155,14 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    let oauth_client = match create_oauth_client_from_keychain(&cred_store) {
-                        Ok(client) => client,
-                        Err(e) => {
-                            error!("{}", e);
-                            return Err(e);
-                        }
-                    };
+                    let oauth_client =
+                        match create_oauth_client_from_keychain(&cred_store, http_client.clone()) {
+                            Ok(client) => client,
+                            Err(e) => {
+                                error!("{}", e);
+                                return Err(e);
+                            }
+                        };
 
                     sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
@@ -191,7 +194,7 @@ async fn main() -> Result<()> {
 
                 info!("Syncing TODOs with Google Tasks on exit...");
 
-                match create_oauth_client_from_keychain(&cred_store) {
+                match create_oauth_client_from_keychain(&cred_store, http_client) {
                     Ok(oauth_client) => {
                         let mut todos: Vec<_> = app.items().to_vec();
 

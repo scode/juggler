@@ -38,7 +38,11 @@ struct OAuthState {
     tx: OAuthSender,
 }
 
-pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult> {
+pub async fn run_oauth_flow(
+    client_id: String,
+    port: u16,
+    client: &reqwest::Client,
+) -> Result<OAuthResult> {
     info!("Starting OAuth flow for Google Tasks API...");
     info!("Client ID: {client_id}");
 
@@ -116,8 +120,14 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
     info!("Received authorization code, exchanging for tokens...");
 
     // Exchange authorization code for tokens
-    let refresh_token =
-        exchange_code_for_tokens(&auth_code, &client_id, &redirect_uri, &code_verifier).await?;
+    let refresh_token = exchange_code_for_tokens(
+        &auth_code,
+        &client_id,
+        &redirect_uri,
+        &code_verifier,
+        client,
+    )
+    .await?;
 
     Ok(OAuthResult { refresh_token })
 }
@@ -248,9 +258,8 @@ async fn exchange_code_for_tokens(
     client_id: &str,
     redirect_uri: &str,
     code_verifier: &str,
+    client: &reqwest::Client,
 ) -> Result<String> {
-    let client = reqwest::Client::new();
-
     let params = vec![
         ("client_id", client_id),
         ("code", auth_code),
