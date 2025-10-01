@@ -14,10 +14,11 @@ mod ui;
 use error::{JugglerError, Result};
 
 use clap::{Parser, Subcommand};
-use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
-use credential_storage::{
-    CredentialStore, KEYRING_ACCOUNT_GOOGLE_TASKS, KEYRING_SERVICE, KeyringCredentialStore,
+use config::{
+    CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE, GOOGLE_OAUTH_CLIENT_ID,
+    get_todos_file_path,
 };
+use credential_storage::{CredentialStore, KeyringCredentialStore};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
@@ -136,8 +137,11 @@ async fn main() -> Result<()> {
                     if debug_auth {
                         info!("Auth diagnostics:");
                         info!("  platform: {}", std::env::consts::OS);
-                        info!("  keychain service: {}", KEYRING_SERVICE);
-                        info!("  keychain account: {}", KEYRING_ACCOUNT_GOOGLE_TASKS);
+                        info!("  keychain service: {}", CREDENTIAL_KEYRING_SERVICE);
+                        info!(
+                            "  keychain account: {}",
+                            CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
+                        );
                         match cred_store.get_refresh_token() {
                             Ok(t) => {
                                 let len = t.len();

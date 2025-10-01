@@ -47,3 +47,6 @@ pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
 }
 
 pub const DEFAULT_EDITOR: &str = "emacs";
+
+pub const CREDENTIAL_KEYRING_SERVICE: &str = "juggler";
+pub const CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
