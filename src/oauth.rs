@@ -6,6 +6,7 @@ use crate::config::{
     GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
     GOOGLE_TASKS_SCOPE,
 };
+use crate::error::{JugglerError, Result};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -20,7 +21,7 @@ use tokio::sync::oneshot;
 use url::Url;
 
 // Type alias to simplify complex type
-type OAuthSender = Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>;
+type OAuthSender = Arc<Mutex<Option<oneshot::Sender<std::result::Result<String, String>>>>>;
 
 // OAuth credentials (public desktop client) are embedded via constants in `config.rs`.
 // For native/desktop apps, Google treats clients as public and permits embedding the
@@ -37,10 +38,7 @@ struct OAuthState {
     tx: OAuthSender,
 }
 
-pub async fn run_oauth_flow(
-    client_id: String,
-    port: u16,
-) -> Result<OAuthResult, Box<dyn std::error::Error>> {
+pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult> {
     info!("Starting OAuth flow for Google Tasks API...");
     info!("Client ID: {client_id}");
 
@@ -111,8 +109,8 @@ pub async fn run_oauth_flow(
     // Wait for authorization code
     let auth_code = match rx.await {
         Ok(Ok(code)) => code,
-        Ok(Err(error)) => return Err(format!("OAuth error: {error}").into()),
-        Err(_) => return Err("Failed to receive authorization code".into()),
+        Ok(Err(error)) => return Err(JugglerError::oauth(format!("OAuth error: {error}"))),
+        Err(_) => return Err(JugglerError::oauth("Failed to receive authorization code")),
     };
 
     info!("Received authorization code, exchanging for tokens...");
@@ -127,7 +125,7 @@ pub async fn run_oauth_flow(
 async fn handle_request(
     req: Request<hyper::body::Incoming>,
     oauth_state: Arc<OAuthState>,
-) -> Result<Response<http_body_util::Full<hyper::body::Bytes>>, hyper::Error> {
+) -> std::result::Result<Response<http_body_util::Full<hyper::body::Bytes>>, hyper::Error> {
     let response = match req.method() {
         &Method::GET => {
             let uri = req.uri();
@@ -254,7 +252,7 @@ async fn exchange_code_for_tokens(
     client_id: &str,
     redirect_uri: &str,
     code_verifier: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String> {
     let client = reqwest::Client::new();
 
     let params = vec![
@@ -283,7 +281,9 @@ async fn exchange_code_for_tokens(
 
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("Token exchange failed: {error_text}").into());
+        return Err(JugglerError::oauth(format!(
+            "Token exchange failed: {error_text}"
+        )));
     }
 
     let token_response: serde_json::Value = response.json().await?;
@@ -291,7 +291,9 @@ async fn exchange_code_for_tokens(
     if let Some(refresh_token) = token_response.get("refresh_token").and_then(|v| v.as_str()) {
         Ok(refresh_token.to_string())
     } else {
-        Err("No refresh token in response. This might happen if you've already granted permission. Try revoking access at https://myaccount.google.com/permissions and try again.".into())
+        Err(JugglerError::oauth(
+            "No refresh token in response. This might happen if you've already granted permission. Try revoking access at https://myaccount.google.com/permissions and try again.",
+        ))
     }
 }
 
@@ -308,7 +310,7 @@ fn generate_code_challenge(code_verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(digest)
 }
 
-fn open_browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    open::that(url)?;
+fn open_browser(url: &str) -> Result<()> {
+    open::that(url).map_err(|e| JugglerError::Other(format!("Failed to open browser: {e}")))?;
     Ok(())
 }

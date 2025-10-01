@@ -1,6 +1,6 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::{env, fs, io, io::Write, process::Command};
+use std::{env, fs, io::Write, process::Command};
 
 use tempfile::NamedTempFile;
 
@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use crate::config::DEFAULT_EDITOR;
 #[cfg(test)]
 use crate::config::DEFAULT_TODOS_FILE;
+use crate::error::{JugglerError, Result};
 use crate::time::{Clock, SharedClock, system_clock};
 use crate::ui::Todo;
 
@@ -24,15 +25,14 @@ pub struct TodoItem {
     pub google_task_id: Option<String>,
 }
 
-pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> io::Result<Vec<Todo>> {
+pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> {
     let content = match fs::read_to_string(&file_path) {
         Ok(content) => content,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => "[]".to_string(),
-        Err(e) => return Err(e),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]".to_string(),
+        Err(e) => return Err(e.into()),
     };
 
-    let items: Vec<TodoItem> = serde_yaml::from_str(&content)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let items: Vec<TodoItem> = serde_yaml::from_str(&content)?;
     let mut todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
 
     // Sort by due date in ascending order
@@ -42,7 +42,7 @@ pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> io::Result<Vec<Tod
     Ok(todos)
 }
 
-pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
+pub fn edit_todo_item(todo: &Todo) -> Result<Todo> {
     // Convert Todo to TodoItem for serialization
     let todo_item = TodoItem {
         title: todo.title.clone(),
@@ -53,8 +53,7 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     };
 
     // Serialize to YAML
-    let yaml_content = serde_yaml::to_string(&todo_item)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let yaml_content = serde_yaml::to_string(&todo_item)?;
 
     // Create secure temporary file with .yaml extension
     let mut temp_file = NamedTempFile::with_suffix(".yaml")?;
@@ -71,7 +70,7 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     let status = Command::new(&editor).arg(temp_path).status()?;
 
     if !status.success() {
-        return Err(io::Error::other(format!(
+        return Err(JugglerError::Other(format!(
             "Editor {editor} exited with non-zero status"
         )));
     }
@@ -82,8 +81,7 @@ pub fn edit_todo_item(todo: &Todo) -> io::Result<Todo> {
     // Temp file is automatically cleaned up when temp_file goes out of scope
 
     // Parse the modified YAML
-    let modified_item: TodoItem = serde_yaml::from_str(&modified_content)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let modified_item: TodoItem = serde_yaml::from_str(&modified_content)?;
 
     // Convert back to Todo, preserving UI state
     let mut updated_todo: Todo = modified_item.into();
@@ -97,7 +95,7 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     todos: &[Todo],
     file_path: P,
     clock: SharedClock,
-) -> io::Result<()> {
+) -> Result<()> {
     let file_path = file_path.as_ref();
 
     // Ensure the directory exists with restricted permissions
@@ -132,8 +130,7 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
         .collect();
 
     // Serialize to YAML
-    let yaml_content = serde_yaml::to_string(&todo_items)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let yaml_content = serde_yaml::to_string(&todo_items)?;
 
     // Get the directory of the target file for temporary file creation
     let target_dir = file_path
@@ -151,7 +148,9 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     }
 
     // Atomically replace the original file
-    temp_file.persist(file_path)?;
+    temp_file
+        .persist(file_path)
+        .map_err(|e| JugglerError::Io(e.error))?;
 
     #[cfg(unix)]
     {
@@ -163,17 +162,14 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     Ok(())
 }
 
-pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> io::Result<()> {
+pub fn store_todos<P: AsRef<std::path::Path>>(todos: &[Todo], file_path: P) -> Result<()> {
     store_todos_with_clock(todos, file_path, system_clock())
 }
 
-fn archive_todos_file(file_path: &std::path::Path, clock: &dyn Clock) -> io::Result<()> {
-    let parent = file_path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "File path has no parent directory",
-        )
-    })?;
+fn archive_todos_file(file_path: &std::path::Path, clock: &dyn Clock) -> Result<()> {
+    let parent = file_path
+        .parent()
+        .ok_or_else(|| JugglerError::Other("File path has no parent directory".to_string()))?;
 
     let now = clock.now();
     let timestamp_str = now.format("%Y-%m-%dT%H-%M-%S").to_string();
