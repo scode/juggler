@@ -17,7 +17,6 @@ use keyring::Entry;
 use log::info;
 use std::error::Error;
 use std::fmt;
-use std::sync::Mutex;
 
 use crate::config::{CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE};
 
@@ -100,47 +99,46 @@ impl CredentialStore for KeyringCredentialStore {
     }
 }
 
-/// In-memory credential store for tests.
-#[cfg_attr(not(test), allow(dead_code))]
-#[derive(Default)]
-pub struct InMemoryCredentialStore {
-    token: Mutex<Option<String>>,
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-impl InMemoryCredentialStore {
-    pub fn new() -> Self {
-        Self {
-            token: Mutex::new(None),
-        }
-    }
-}
-
-impl CredentialStore for InMemoryCredentialStore {
-    fn store_refresh_token(&self, refresh_token: &str) -> Result<(), CredentialError> {
-        let mut guard = self.token.lock().unwrap();
-        *guard = Some(refresh_token.to_string());
-        Ok(())
-    }
-
-    fn get_refresh_token(&self) -> Result<String, CredentialError> {
-        let guard = self.token.lock().unwrap();
-        match &*guard {
-            Some(s) => Ok(s.clone()),
-            None => Err(CredentialError::NotFound),
-        }
-    }
-
-    fn delete_refresh_token(&self) -> Result<(), CredentialError> {
-        let mut guard = self.token.lock().unwrap();
-        *guard = None;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// In-memory credential store for tests.
+    #[derive(Default)]
+    pub struct InMemoryCredentialStore {
+        token: Mutex<Option<String>>,
+    }
+
+    impl InMemoryCredentialStore {
+        pub fn new() -> Self {
+            Self {
+                token: Mutex::new(None),
+            }
+        }
+    }
+
+    impl CredentialStore for InMemoryCredentialStore {
+        fn store_refresh_token(&self, refresh_token: &str) -> Result<(), CredentialError> {
+            let mut guard = self.token.lock().unwrap();
+            *guard = Some(refresh_token.to_string());
+            Ok(())
+        }
+
+        fn get_refresh_token(&self) -> Result<String, CredentialError> {
+            let guard = self.token.lock().unwrap();
+            match &*guard {
+                Some(s) => Ok(s.clone()),
+                None => Err(CredentialError::NotFound),
+            }
+        }
+
+        fn delete_refresh_token(&self) -> Result<(), CredentialError> {
+            let mut guard = self.token.lock().unwrap();
+            *guard = None;
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_store_and_get_refresh_token_in_memory() {
