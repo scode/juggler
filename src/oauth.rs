@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::config::{
     GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
@@ -17,7 +17,7 @@ use log::{error, info};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, oneshot};
 use url::Url;
 
 // Type alias to simplify complex type
@@ -154,9 +154,8 @@ async fn handle_callback(
     let query = match query {
         Some(q) => q,
         None => {
-            if let Ok(mut tx_guard) = oauth_state.tx.lock()
-                && let Some(tx) = tx_guard.take()
-            {
+            let mut tx_guard = oauth_state.tx.lock().await;
+            if let Some(tx) = tx_guard.take() {
                 let _ = tx.send(Err("No query parameters".to_string()));
             }
             return Response::builder()
@@ -175,9 +174,8 @@ async fn handle_callback(
         let error_description = params.get("error_description").unwrap_or(&default_error);
         let error_msg = format!("{error}: {error_description}");
 
-        if let Ok(mut tx_guard) = oauth_state.tx.lock()
-            && let Some(tx) = tx_guard.take()
-        {
+        let mut tx_guard = oauth_state.tx.lock().await;
+        if let Some(tx) = tx_guard.take() {
             let _ = tx.send(Err(error_msg));
         }
 
@@ -194,9 +192,8 @@ async fn handle_callback(
     }
 
     if let Some(code) = params.get("code") {
-        if let Ok(mut tx_guard) = oauth_state.tx.lock()
-            && let Some(tx) = tx_guard.take()
-        {
+        let mut tx_guard = oauth_state.tx.lock().await;
+        if let Some(tx) = tx_guard.take() {
             let _ = tx.send(Ok(code.clone()));
         }
 
@@ -215,9 +212,8 @@ async fn handle_callback(
             .unwrap();
     }
 
-    if let Ok(mut tx_guard) = oauth_state.tx.lock()
-        && let Some(tx) = tx_guard.take()
-    {
+    let mut tx_guard = oauth_state.tx.lock().await;
+    if let Some(tx) = tx_guard.take() {
         let _ = tx.send(Err("Missing authorization code".to_string()));
     }
 
