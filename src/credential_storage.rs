@@ -19,8 +19,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Mutex;
 
-pub const KEYRING_SERVICE: &str = "juggler";
-pub const KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
+use crate::config::{CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE};
 
 /// Errors returned by `CredentialStore` implementations.
 #[derive(Debug)]
@@ -59,8 +58,11 @@ impl KeyringCredentialStore {
     }
 
     fn make_entry(&self) -> Result<Entry, CredentialError> {
-        Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS)
-            .map_err(|e| CredentialError::Backend(e.to_string()))
+        Entry::new(
+            CREDENTIAL_KEYRING_SERVICE,
+            CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS,
+        )
+        .map_err(|e| CredentialError::Backend(e.to_string()))
     }
 }
 
@@ -68,7 +70,7 @@ impl CredentialStore for KeyringCredentialStore {
     fn store_refresh_token(&self, refresh_token: &str) -> Result<(), CredentialError> {
         info!(
             "Keyring: storing refresh token (service={}, account={})...",
-            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+            CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
         let entry = self.make_entry()?;
         Entry::set_password(&entry, refresh_token)
@@ -78,7 +80,7 @@ impl CredentialStore for KeyringCredentialStore {
     fn get_refresh_token(&self) -> Result<String, CredentialError> {
         info!(
             "Keyring: retrieving refresh token (service={}, account={})...",
-            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+            CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
         let entry = self.make_entry()?;
         match Entry::get_password(&entry) {
@@ -91,7 +93,7 @@ impl CredentialStore for KeyringCredentialStore {
     fn delete_refresh_token(&self) -> Result<(), CredentialError> {
         info!(
             "Keyring: deleting refresh token (service={}, account={})...",
-            KEYRING_SERVICE, KEYRING_ACCOUNT_GOOGLE_TASKS
+            CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
         let entry = self.make_entry()?;
         Entry::delete_credential(&entry).map_err(|e| CredentialError::Backend(e.to_string()))
