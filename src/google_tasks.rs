@@ -5,6 +5,7 @@ use crate::config::{
     GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
     GOOGLE_TASKS_LIST_NAME,
 };
+use crate::error::{JugglerError, Result};
 use crate::time::{SharedClock, system_clock};
 use crate::ui::Todo;
 
@@ -172,7 +173,7 @@ impl GoogleOAuthClient {
         }
     }
 
-    pub async fn get_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn get_access_token(&mut self) -> Result<String> {
         if let (Some(token), Some(expires_at)) = (&self.cached_access_token, &self.token_expires_at)
             && self.clock.now() < *expires_at - chrono::Duration::minutes(5)
         {
@@ -182,7 +183,7 @@ impl GoogleOAuthClient {
         self.refresh_access_token().await
     }
 
-    async fn refresh_access_token(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+    async fn refresh_access_token(&mut self) -> Result<String> {
         let token_url = &self.oauth_token_url;
 
         let params = vec![
@@ -196,12 +197,11 @@ impl GoogleOAuthClient {
         let response = self.client.post(token_url).form(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(format!(
+            return Err(JugglerError::oauth(format!(
                 "OAuth token refresh failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )
-            .into());
+            )));
         }
 
         let token_response: OAuthTokenResponse = response.json().await?;
@@ -220,7 +220,7 @@ async fn fetch_all_tasklists(
     client: &reqwest::Client,
     access_token: &str,
     base_url: &str,
-) -> Result<Vec<GoogleTaskList>, Box<dyn std::error::Error>> {
+) -> Result<Vec<GoogleTaskList>> {
     let mut all_lists: Vec<GoogleTaskList> = Vec::new();
     let mut page_token: Option<String> = None;
 
@@ -234,12 +234,11 @@ async fn fetch_all_tasklists(
 
         let resp = req.send().await?;
         if !resp.status().is_success() {
-            return Err(format!(
+            return Err(JugglerError::google_tasks(format!(
                 "Google Tasks API request failed with status {}: {}",
                 resp.status(),
                 resp.text().await.unwrap_or_default()
-            )
-            .into());
+            )));
         }
 
         let payload: GoogleTaskListsResponse = resp.json().await?;
@@ -261,7 +260,7 @@ async fn fetch_all_tasks(
     list_id: &str,
     access_token: &str,
     base_url: &str,
-) -> Result<Vec<GoogleTask>, Box<dyn std::error::Error>> {
+) -> Result<Vec<GoogleTask>> {
     let mut all_tasks: Vec<GoogleTask> = Vec::new();
     let mut page_token: Option<String> = None;
 
@@ -280,12 +279,11 @@ async fn fetch_all_tasks(
 
         let resp = req.send().await?;
         if !resp.status().is_success() {
-            return Err(format!(
+            return Err(JugglerError::google_tasks(format!(
                 "Google Tasks API request failed with status {}: {}",
                 resp.status(),
                 resp.text().await.unwrap_or_default()
-            )
-            .into());
+            )));
         }
 
         let payload: GoogleTasksListResponse = resp.json().await?;
@@ -310,7 +308,7 @@ async fn create_google_task(
     access_token: &str,
     dry_run: bool,
     base_url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     let new_task = GoogleTask {
         id: None,
         title: format!("j:{}", todo.title),
@@ -344,12 +342,11 @@ async fn create_google_task(
             .await?;
 
         if !response.status().is_success() {
-            return Err(format!(
+            return Err(JugglerError::google_tasks(format!(
                 "Google Tasks API request failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )
-            .into());
+            )));
         }
 
         let created_task: GoogleTask = response.json().await?;
@@ -364,7 +361,7 @@ pub async fn sync_to_tasks_with_oauth(
     todos: &mut [Todo],
     oauth_client: GoogleOAuthClient,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     sync_to_tasks_with_oauth_and_base_url(todos, oauth_client, dry_run, GOOGLE_TASKS_BASE_URL).await
 }
 
@@ -373,7 +370,7 @@ pub async fn sync_to_tasks_with_oauth_and_base_url(
     mut oauth_client: GoogleOAuthClient,
     dry_run: bool,
     base_url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     let access_token = oauth_client.get_access_token().await?;
     sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url).await
 }
@@ -383,7 +380,7 @@ async fn sync_to_tasks_with_base_url(
     access_token: &str,
     dry_run: bool,
     base_url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     if dry_run {
         info!("Starting sync in DRY RUN mode - no changes will be made");
     } else {
@@ -397,10 +394,12 @@ async fn sync_to_tasks_with_base_url(
     let juggler_list = all_tasklists
         .into_iter()
         .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
-        .ok_or(format!(
-            "No '{}' task list found in Google Tasks",
-            GOOGLE_TASKS_LIST_NAME
-        ))?;
+        .ok_or_else(|| {
+            JugglerError::google_tasks(format!(
+                "No '{}' task list found in Google Tasks",
+                GOOGLE_TASKS_LIST_NAME
+            ))
+        })?;
     info!("Parent task list ID: {}", juggler_list.id);
     // Get all existing tasks from the sync list (across all pages)
     let existing_tasks = fetch_all_tasks(&client, &juggler_list.id, access_token, base_url).await?;
@@ -508,12 +507,11 @@ async fn sync_to_tasks_with_base_url(
                                 .await?;
 
                             if !response.status().is_success() {
-                                return Err(format!(
+                                return Err(JugglerError::google_tasks(format!(
                                     "Google Tasks API request failed with status {}: {}",
                                     response.status(),
                                     response.text().await.unwrap_or_default()
-                                )
-                                .into());
+                                )));
                             }
                         }
                     }
@@ -569,12 +567,11 @@ async fn sync_to_tasks_with_base_url(
                 .await?;
 
             if !response.status().is_success() {
-                return Err(format!(
+                return Err(JugglerError::google_tasks(format!(
                     "Google Tasks API request failed with status {}: {}",
                     response.status(),
                     response.text().await.unwrap_or_default()
-                )
-                .into());
+                )));
             }
             info!("Deleted orphaned Google Task: '{}'", google_task.title);
         }

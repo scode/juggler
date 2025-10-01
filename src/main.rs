@@ -1,15 +1,17 @@
 use env_logger::Env;
-use std::io;
 
 use log::{error, info};
 
 mod config;
 mod credential_storage;
+mod error;
 mod google_tasks;
 mod oauth;
 mod store;
 mod time;
 mod ui;
+
+use error::{JugglerError, Result};
 
 use clap::{Parser, Subcommand};
 use config::{GOOGLE_OAUTH_CLIENT_ID, get_todos_file_path};
@@ -23,9 +25,11 @@ use ui::{App, ExternalEditor};
 
 fn create_oauth_client_from_keychain(
     cred_store: &dyn CredentialStore,
-) -> Result<GoogleOAuthClient, io::Error> {
+) -> Result<GoogleOAuthClient> {
     let refresh_token = cred_store.get_refresh_token().map_err(|_| {
-        io::Error::other("No refresh token found in keychain. Run `juggler login` to authenticate.")
+        JugglerError::config(
+            "No refresh token found in keychain. Run `juggler login` to authenticate.",
+        )
     })?;
 
     let credentials = GoogleOAuthCredentials {
@@ -69,7 +73,7 @@ enum SyncService {
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> Result<()> {
     let env = Env::default().filter_or("RUST_LOG", "info");
     env_logger::Builder::from_env(env).init();
 
@@ -100,15 +104,13 @@ async fn main() -> io::Result<()> {
                         }
                         Err(e) => {
                             error!("Failed to store refresh token in keyring: {e}");
-                            return Err(io::Error::other(
-                                "Failed to store refresh token in keyring",
-                            ));
+                            return Err(JugglerError::Credential(e));
                         }
                     }
                 }
                 Err(e) => {
                     error!("Authentication failed: {e}");
-                    return Err(io::Error::other(e.to_string()));
+                    return Err(JugglerError::oauth(e.to_string()));
                 }
             }
         }
@@ -118,9 +120,7 @@ async fn main() -> io::Result<()> {
             }
             Err(e) => {
                 error!("Failed to delete refresh token from keychain: {e}");
-                return Err(io::Error::other(
-                    "Failed to delete refresh token from keychain",
-                ));
+                return Err(JugglerError::Credential(e));
             }
         },
         Some(Commands::Sync { service }) => {
@@ -157,12 +157,7 @@ async fn main() -> io::Result<()> {
                         }
                     };
 
-                    if let Err(e) =
-                        sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await
-                    {
-                        error!("Error syncing with Google Tasks: {e}");
-                        return Err(io::Error::other(e.to_string()));
-                    }
+                    sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
                     // Save the updated todos with new google_task_ids
                     if let Err(e) = store_todos(&todos, &todos_file) {

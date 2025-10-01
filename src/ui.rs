@@ -1,5 +1,3 @@
-use std::io;
-
 use chrono::{DateTime, Duration, Utc};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -10,20 +8,21 @@ use ratatui::{
 };
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+use crate::error::Result;
 use crate::store::{TodoItem, edit_todo_item};
 #[cfg(test)]
 use crate::time::fixed_clock;
 use crate::time::{SharedClock, system_clock};
 
 pub trait TodoEditor {
-    fn edit_todo(&self, todo: &Todo) -> io::Result<Todo>;
+    fn edit_todo(&self, todo: &Todo) -> Result<Todo>;
     fn needs_terminal_restoration(&self) -> bool;
 }
 
 pub struct ExternalEditor;
 
 impl TodoEditor for ExternalEditor {
-    fn edit_todo(&self, todo: &Todo) -> io::Result<Todo> {
+    fn edit_todo(&self, todo: &Todo) -> Result<Todo> {
         edit_todo_item(todo)
     }
 
@@ -274,7 +273,7 @@ impl<T: TodoEditor> App<T> {
         }
     }
 
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw_internal(frame))?;
             self.handle_events(terminal)?;
@@ -429,7 +428,7 @@ impl<T: TodoEditor> App<T> {
         Text::from(lines)
     }
 
-    fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+    fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 if self.prompt_overlay.is_some() {
@@ -481,7 +480,7 @@ impl<T: TodoEditor> App<T> {
         &mut self,
         key_event: KeyEvent,
         terminal: &mut DefaultTerminal,
-    ) -> io::Result<()> {
+    ) -> Result<()> {
         if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
             && self.editor.needs_terminal_restoration()
         {
@@ -1004,7 +1003,7 @@ mod tests {
     struct NoOpEditor;
 
     impl TodoEditor for NoOpEditor {
-        fn edit_todo(&self, todo: &Todo) -> io::Result<Todo> {
+        fn edit_todo(&self, todo: &Todo) -> Result<Todo> {
             // Return the todo unchanged
             Ok(todo.clone())
         }
@@ -1026,7 +1025,7 @@ mod tests {
     }
 
     impl TodoEditor for MockEditor {
-        fn edit_todo(&self, _todo: &Todo) -> io::Result<Todo> {
+        fn edit_todo(&self, _todo: &Todo) -> Result<Todo> {
             Ok(self.return_todo.clone())
         }
 
