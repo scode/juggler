@@ -204,7 +204,7 @@ async fn handle_callback(
     if let Some(code) = params.get("code") {
         let mut tx_guard = oauth_state.tx.lock().await;
         if let Some(tx) = tx_guard.take() {
-            let _ = tx.send(Ok(code.clone()));
+            let _ = tx.send(Ok(code.to_string()));
         }
 
         return Response::builder()
