@@ -1,3 +1,10 @@
+pub const CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
+pub const CREDENTIAL_KEYRING_SERVICE: &str = "juggler";
+
+pub const DEFAULT_EDITOR: &str = "emacs";
+
+pub const GOOGLE_OAUTH_AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
 pub const GOOGLE_OAUTH_CLIENT_ID: &str =
     "427291927957-9bon53siil65sgblb6hi846n53ddpte3.apps.googleusercontent.com";
 
@@ -18,18 +25,13 @@ pub const GOOGLE_OAUTH_CLIENT_ID: &str =
 /// This application embeds the client secret below as required for native clients.
 pub const GOOGLE_OAUTH_CLIENT_SECRET: &str = "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";
 
-pub const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
-
-pub const GOOGLE_OAUTH_AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-
-pub const GOOGLE_TASKS_SCOPE: &str = "https://www.googleapis.com/auth/tasks";
-
 pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
 pub const GOOGLE_TASKS_BASE_URL: &str = "https://tasks.googleapis.com";
 
-#[cfg(test)]
-pub const DEFAULT_TODOS_FILE: &str = "TODOs.yaml";
+pub const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
+
+pub const GOOGLE_TASKS_SCOPE: &str = "https://www.googleapis.com/auth/tasks";
 
 pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
     dirs::home_dir()
@@ -45,8 +47,3 @@ pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
 pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
     get_juggler_dir().map(|dir| dir.join("TODOs.yaml"))
 }
-
-pub const DEFAULT_EDITOR: &str = "emacs";
-
-pub const CREDENTIAL_KEYRING_SERVICE: &str = "juggler";
-pub const CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
