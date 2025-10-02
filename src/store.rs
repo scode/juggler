@@ -114,7 +114,7 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
     }
 
     // Convert Todo items to TodoItem for serialization
-    let todo_items: Vec<TodoItem> = todos
+    let mut todo_items: Vec<TodoItem> = todos
         .iter()
         .map(|todo| TodoItem {
             title: todo.title.clone(),
@@ -124,6 +124,15 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
             google_task_id: todo.google_task_id.clone(),
         })
         .collect();
+
+    // Use a deterministic order to optimize the user experience when
+    // using "diff -u" on the store manually.
+    todo_items.sort_by(|a, b| match (&a.google_task_id, &b.google_task_id) {
+        (Some(id_a), Some(id_b)) => id_a.cmp(id_b).then_with(|| a.title.cmp(&b.title)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.title.cmp(&b.title),
+    });
 
     // Serialize to YAML
     let yaml_content = serde_yaml::to_string(&todo_items)?;
@@ -439,5 +448,76 @@ comment: "Test comment"
 
         // Should return empty vector
         assert_eq!(todos.len(), 0);
+    }
+
+    /// We want to ensure we store in a deterministic order to optimize the user experience when
+    /// using "diff -u" on the store manually.
+    #[test]
+    fn store_todos_sorts_by_id_then_title() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let test_file = temp_dir.path().join("sorted_todos.yaml");
+
+        // Create todos in intentionally unsorted order
+        let todos = vec![
+            Todo {
+                title: "Zebra".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: Some("id_3".to_string()),
+            },
+            Todo {
+                title: "Apple".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            },
+            Todo {
+                title: "Banana".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: Some("id_1".to_string()),
+            },
+            Todo {
+                title: "Cherry".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: None,
+            },
+            Todo {
+                title: "Date".to_string(),
+                comment: None,
+                expanded: false,
+                done: false,
+                selected: false,
+                due_date: None,
+                google_task_id: Some("id_2".to_string()),
+            },
+        ];
+
+        store_todos(&todos, &test_file).expect("store todos");
+
+        // Load and verify order
+        let loaded = load_todos(&test_file).expect("load todos");
+
+        // Expected order: items with google_task_id sorted by ID, then items without ID sorted by title
+        assert_eq!(loaded[0].title, "Banana"); // id_1
+        assert_eq!(loaded[1].title, "Date"); // id_2
+        assert_eq!(loaded[2].title, "Zebra"); // id_3
+        assert_eq!(loaded[3].title, "Apple"); // no ID, alphabetically first
+        assert_eq!(loaded[4].title, "Cherry"); // no ID, alphabetically second
     }
 }
