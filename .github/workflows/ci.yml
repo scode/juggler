@@ -65,13 +65,25 @@ jobs:
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: --cfg docsrs
-  test:
-    runs-on: ${{ matrix.os }}
-    name: test ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
+  test-macos:
+    runs-on: macos-latest
+    name: test macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Rust toolchain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test --locked
+        run: cargo test --locked --all-features --all-targets
+  test-windows:
+    runs-on: windows-latest
+    name: test windows-latest
+    if: github.event_name == 'push'
     steps:
       # if your project needs OpenSSL, uncomment this to fix Windows builds.
       # it's commented out by default as the install command takes 5-10m.
@@ -85,7 +97,6 @@ jobs:
         with:
           toolchain: stable
           cache: true
-      # enable this ci template to run regardless of whether the lockfile is checked in or not
       - name: cargo generate-lockfile
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
