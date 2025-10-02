@@ -252,7 +252,12 @@ impl<T: TodoEditor> App<T> {
     }
 
     pub fn new_with_clock(items: Vec<Todo>, editor: T, clock: SharedClock) -> Self {
-        let pending_count = items.iter().filter(|item| !item.done).count();
+        // Sort items by due date for display purposes
+        // Items without due dates go to the end
+        let mut sorted_items = items;
+        sorted_items.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
+
+        let pending_count = sorted_items.iter().filter(|item| !item.done).count();
         let current_section = if pending_count > 0 {
             Section::Pending
         } else {
@@ -262,7 +267,7 @@ impl<T: TodoEditor> App<T> {
         App {
             exit: false,
             sync_on_exit: false,
-            items,
+            items: sorted_items,
             pending_count,
             current_section,
             pending_index: 0,
@@ -1229,9 +1234,11 @@ mod tests {
 
         let app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
+        // After sorting by due date, "b" (with due date) comes before "a" (no due date)
+        // Index 0 has the cursor by default, so expect cursor prefix
         assert_eq!(
-            text_to_string(&app.display_text_internal(1)),
-            "  [ ]   2d b >>>\n           c1\n           c2"
+            text_to_string(&app.display_text_internal(0)),
+            "▶ [ ]   2d b >>>\n           c1\n           c2"
         );
     }
 
@@ -1718,46 +1725,100 @@ mod tests {
         let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
 
-        let d1_s = app.items[0].due_date.unwrap();
-        let d2_s = app.items[1].due_date.unwrap();
-        let d3_s = app.items[2].due_date.unwrap();
+        // Find items by title since sorting may change order
+        let overdue = app
+            .items
+            .iter()
+            .find(|t| t.title == "overdue task")
+            .unwrap();
+        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
+        let no_due = app
+            .items
+            .iter()
+            .find(|t| t.title == "no due date task")
+            .unwrap();
 
-        // First item (overdue): base + 1d (exact)
+        let d1_s = overdue.due_date.unwrap();
+        let d2_s = future.due_date.unwrap();
+        let d3_s = no_due.due_date.unwrap();
+
+        // Overdue task: base + 1d (exact)
         assert_eq!(d1_s, base + Duration::days(1));
-        // Second item (future): exact +1d
+        // Future task: exact +1d
         assert_eq!(d2_s, future_date + Duration::days(1));
-        // Third item (no due): base + 1d (exact)
+        // No due date task: base + 1d (exact)
         assert_eq!(d3_s, base + Duration::days(1));
 
         // 2) S (unsnooze -1d)
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
-        let d1_uns = app.items[0].due_date.unwrap();
-        let d2_uns = app.items[1].due_date.unwrap();
-        let d3_uns = app.items[2].due_date.unwrap();
+        let overdue = app
+            .items
+            .iter()
+            .find(|t| t.title == "overdue task")
+            .unwrap();
+        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
+        let no_due = app
+            .items
+            .iter()
+            .find(|t| t.title == "no due date task")
+            .unwrap();
+
+        let d1_uns = overdue.due_date.unwrap();
+        let d2_uns = future.due_date.unwrap();
+        let d3_uns = no_due.due_date.unwrap();
         assert_eq!(d1_uns, d1_s - Duration::days(1));
         assert_eq!(d2_uns, d2_s - Duration::days(1));
         assert_eq!(d3_uns, d3_s - Duration::days(1));
 
         // 3) p (postpone +7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let d1_p = app.items[0].due_date.unwrap();
-        let d2_p = app.items[1].due_date.unwrap();
-        let d3_p = app.items[2].due_date.unwrap();
+        let overdue = app
+            .items
+            .iter()
+            .find(|t| t.title == "overdue task")
+            .unwrap();
+        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
+        let no_due = app
+            .items
+            .iter()
+            .find(|t| t.title == "no due date task")
+            .unwrap();
+
+        let d1_p = overdue.due_date.unwrap();
+        let d2_p = future.due_date.unwrap();
+        let d3_p = no_due.due_date.unwrap();
         assert_eq!(d1_p, d1_uns + Duration::days(7));
         assert_eq!(d2_p, d2_uns + Duration::days(7));
         assert_eq!(d3_p, d3_uns + Duration::days(7));
 
         // 4) P (prepone -7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let d1_prep = app.items[0].due_date.unwrap();
-        let d2_prep = app.items[1].due_date.unwrap();
-        let d3_prep = app.items[2].due_date.unwrap();
+        let overdue = app
+            .items
+            .iter()
+            .find(|t| t.title == "overdue task")
+            .unwrap();
+        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
+        let no_due = app
+            .items
+            .iter()
+            .find(|t| t.title == "no due date task")
+            .unwrap();
+
+        let d1_prep = overdue.due_date.unwrap();
+        let d2_prep = future.due_date.unwrap();
+        let d3_prep = no_due.due_date.unwrap();
         assert_eq!(d1_prep, d1_p - Duration::days(7));
         assert_eq!(d2_prep, d2_p - Duration::days(7));
         assert_eq!(d3_prep, d3_p - Duration::days(7));
 
-        // Fourth item (not selected): should remain unchanged
-        assert_eq!(app.items[3].due_date, Some(past_date));
+        // Not selected item should remain unchanged
+        let not_selected = app
+            .items
+            .iter()
+            .find(|t| t.title == "not selected task")
+            .unwrap();
+        assert_eq!(not_selected.due_date, Some(past_date));
     }
 
     #[test]

@@ -33,11 +33,7 @@ pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> 
     };
 
     let items: Vec<TodoItem> = serde_yaml::from_str(&content)?;
-    let mut todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
-
-    // Sort by due date in ascending order
-    // Items without due dates go to the end
-    todos.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
+    let todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
 
     Ok(todos)
 }
@@ -189,12 +185,12 @@ mod tests {
     fn load_todos_parses_comments() {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
-        // After sorting, Item 1 is now at index 4 (2031 due date)
-        assert_eq!(todos[4].title, "Item 1");
-        let comment = todos[4].comment.as_deref().expect("comment for Item 1");
+        // Find Item 1 in the loaded todos (order is not guaranteed by load_todos)
+        let item1 = todos.iter().find(|t| t.title == "Item 1").expect("Item 1");
+        let comment = item1.comment.as_deref().expect("comment for Item 1");
         assert!(comment.starts_with("This is a comment for item 1."));
         assert!(comment.contains("It can span multiple lines."));
-        assert!(!todos[4].expanded);
+        assert!(!item1.expanded);
     }
 
     #[test]
@@ -202,18 +198,19 @@ mod tests {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
-        // First five items should default to not done
-        assert!(!todos[0].done);
-        assert!(!todos[1].done);
-        assert!(!todos[2].done);
-        assert!(!todos[3].done);
-        assert!(!todos[4].done);
+        // Find the completed task
+        let completed = todos
+            .iter()
+            .find(|t| t.title == "Completed task example")
+            .expect("Completed task example");
+        assert!(completed.done);
 
-        // Sixth item should be marked as done
-        assert!(todos[5].done);
-        assert_eq!(todos[5].title, "Completed task example");
-
-        // This item is the completed one and is checked above
+        // All other items should default to not done
+        for todo in &todos {
+            if todo.title != "Completed task example" {
+                assert!(!todo.done);
+            }
+        }
     }
 
     #[test]
