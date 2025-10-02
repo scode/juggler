@@ -7,8 +7,6 @@ use tempfile::NamedTempFile;
 use chrono::{DateTime, Utc};
 
 use crate::config::DEFAULT_EDITOR;
-#[cfg(test)]
-use crate::config::DEFAULT_TODOS_FILE;
 use crate::error::{JugglerError, Result};
 use crate::time::{Clock, SharedClock, system_clock};
 use crate::ui::Todo;
@@ -166,9 +164,11 @@ mod tests {
     use super::*;
     use crate::time::fixed_clock;
 
+    const TEST_TODOS_FILE: &str = "TODOs.yaml";
+
     #[test]
     fn load_todos_parses_comments() {
-        let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
+        let todos = load_todos(TEST_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
         let item1 = todos.iter().find(|t| t.title == "Item 1").expect("Item 1");
         let comment = item1.comment.as_deref().expect("comment for Item 1");
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn load_todos_handles_done_field() {
-        let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
+        let todos = load_todos(TEST_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
         let completed = todos
