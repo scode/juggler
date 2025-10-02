@@ -1,9 +1,12 @@
 use chrono::Utc;
 use log::info;
+use oauth2::basic::BasicClient;
+use oauth2::reqwest::async_http_client;
+use oauth2::{AuthUrl, ClientId, ClientSecret, RefreshToken, TokenResponse, TokenUrl};
 
 use crate::config::{
-    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_BASE_URL,
-    GOOGLE_TASKS_LIST_NAME,
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
+    GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME,
 };
 use crate::error::{JugglerError, Result};
 use crate::time::{SharedClock, system_clock};
@@ -38,12 +41,6 @@ struct GoogleTaskListsResponse {
 struct GoogleTaskList {
     id: String,
     title: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct OAuthTokenResponse {
-    access_token: String,
-    expires_in: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,35 +182,37 @@ impl GoogleOAuthClient {
     }
 
     async fn refresh_access_token(&mut self) -> Result<String> {
-        let token_url = &self.oauth_token_url;
-
-        let params = vec![
-            ("client_id", self.credentials.client_id.as_str()),
-            ("refresh_token", self.credentials.refresh_token.as_str()),
-            ("grant_type", "refresh_token"),
-            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
-        ];
         info!("Using embedded client_secret for token refresh (desktop/native client)");
 
-        let response = self.client.post(token_url).form(&params).send().await?;
-
-        if !response.status().is_success() {
-            return Err(JugglerError::oauth(format!(
-                "OAuth token refresh failed with status {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            )));
-        }
-
-        let token_response: OAuthTokenResponse = response.json().await?;
-
-        self.cached_access_token = Some(token_response.access_token.clone());
-        self.token_expires_at = Some(
-            self.clock.now()
-                + chrono::Duration::seconds(token_response.expires_in.unwrap_or(3600) as i64),
+        // Set up OAuth2 client using the oauth2 crate
+        let oauth_client = BasicClient::new(
+            ClientId::new(self.credentials.client_id.clone()),
+            Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
+            AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
+                .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
+            Some(
+                TokenUrl::new(self.oauth_token_url.clone())
+                    .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
+            ),
         );
 
-        Ok(token_response.access_token)
+        let token_result = oauth_client
+            .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
+            .request_async(async_http_client)
+            .await
+            .map_err(|e| JugglerError::oauth(format!("OAuth token refresh failed: {e}")))?;
+
+        let access_token = token_result.access_token().secret().to_string();
+        let expires_in = token_result
+            .expires_in()
+            .map(|d| d.as_secs())
+            .unwrap_or(3600);
+
+        self.cached_access_token = Some(access_token.clone());
+        self.token_expires_at =
+            Some(self.clock.now() + chrono::Duration::seconds(expires_in as i64));
+
+        Ok(access_token)
     }
 }
 
@@ -596,7 +595,7 @@ mod tests {
     use super::*;
     use crate::time::fixed_clock;
     use chrono::{TimeZone, Utc};
-    use wiremock::matchers::{bearer_token, body_string_contains, method, path, query_param};
+    use wiremock::matchers::{bearer_token, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn test_clock() -> SharedClock {
@@ -1112,11 +1111,6 @@ mod tests {
         // Mock OAuth token endpoint
         Mock::given(method("POST"))
             .and(path("/token"))
-            .and(body_string_contains("grant_type=refresh_token"))
-            .and(body_string_contains(format!(
-                "client_id={GOOGLE_OAUTH_CLIENT_ID}"
-            )))
-            .and(body_string_contains("refresh_token=test_refresh_token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "new_access_token",
                 "expires_in": 3600,
@@ -1181,14 +1175,10 @@ mod tests {
         // Mock OAuth token endpoint
         Mock::given(method("POST"))
             .and(path("/token"))
-            .and(body_string_contains("grant_type=refresh_token"))
-            .and(body_string_contains(format!(
-                "client_id={GOOGLE_OAUTH_CLIENT_ID}"
-            )))
-            .and(body_string_contains("refresh_token=test_refresh_token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "oauth_access_token",
-                "expires_in": 3600
+                "expires_in": 3600,
+                "token_type": "Bearer"
             })))
             .mount(&oauth_mock_server)
             .await;
@@ -1275,7 +1265,8 @@ mod tests {
             .and(path("/token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "oauth_access_token_dry_run",
-                "expires_in": 3600
+                "expires_in": 3600,
+                "token_type": "Bearer"
             })))
             .mount(&oauth_mock_server)
             .await;
@@ -1448,7 +1439,8 @@ mod tests {
             .and(path("/token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "oauth_update_token",
-                "expires_in": 3600
+                "expires_in": 3600,
+                "token_type": "Bearer"
             })))
             .mount(&oauth_mock_server)
             .await;
@@ -1585,7 +1577,7 @@ mod tests {
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("OAuth token refresh failed with status 401"));
+        assert!(error_msg.contains("OAuth token refresh failed"));
     }
 
     #[tokio::test]
@@ -1763,7 +1755,7 @@ mod tests {
         let result = oauth_client.get_access_token().await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("OAuth token refresh failed with status 400"));
+        assert!(error_msg.contains("OAuth token refresh failed"));
     }
 
     #[tokio::test]

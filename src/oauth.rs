@@ -3,22 +3,23 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::config::{
-    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL,
-    GOOGLE_TASKS_SCOPE,
+    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
+    GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
 };
 use crate::error::{JugglerError, Result};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-
 use log::{error, info};
-use rand::Rng;
-use sha2::{Digest, Sha256};
+use oauth2::basic::BasicClient;
+use oauth2::reqwest::async_http_client;
+use oauth2::{
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
+};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, oneshot};
-use url::Url;
 
 // Type alias to simplify complex type
 type OAuthSender = Arc<Mutex<Option<oneshot::Sender<std::result::Result<String, String>>>>>;
@@ -38,17 +39,9 @@ struct OAuthState {
     tx: OAuthSender,
 }
 
-pub async fn run_oauth_flow(
-    client_id: String,
-    port: u16,
-    client: &reqwest::Client,
-) -> Result<OAuthResult> {
+pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult> {
     info!("Starting OAuth flow for Google Tasks API...");
     info!("Client ID: {client_id}");
-
-    // Generate PKCE parameters
-    let code_verifier = generate_code_verifier();
-    let code_challenge = generate_code_challenge(&code_verifier);
 
     // Start local HTTP server
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -59,8 +52,33 @@ pub async fn run_oauth_flow(
 
     let redirect_uri = format!("http://localhost:{actual_port}/callback");
 
+    // Set up OAuth2 client using the oauth2 crate
+    let oauth_client = BasicClient::new(
+        ClientId::new(GOOGLE_OAUTH_CLIENT_ID.to_string()),
+        Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
+        AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
+            .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
+        Some(
+            TokenUrl::new(GOOGLE_OAUTH_TOKEN_URL.to_string())
+                .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
+        ),
+    )
+    .set_redirect_uri(
+        RedirectUrl::new(redirect_uri.clone())
+            .map_err(|e| JugglerError::oauth(format!("Invalid redirect URI: {e}")))?,
+    );
+
+    // Generate PKCE challenge
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
     // Build authorization URL
-    let auth_url = build_auth_url(&client_id, &redirect_uri, &code_challenge);
+    let (auth_url, _csrf_token) = oauth_client
+        .authorize_url(CsrfToken::new_random)
+        .add_scope(Scope::new(GOOGLE_TASKS_SCOPE.to_string()))
+        .add_extra_param("access_type", "offline")
+        .add_extra_param("prompt", "consent")
+        .set_pkce_challenge(pkce_challenge)
+        .url();
 
     // Open browser
     info!("Opening browser for authentication...");
@@ -68,7 +86,7 @@ pub async fn run_oauth_flow(
     println!("If your browser doesn't open automatically, please visit:");
     println!("{auth_url}\n");
 
-    if let Err(e) = open_browser(&auth_url) {
+    if let Err(e) = open_browser(auth_url.as_str()) {
         error!("Failed to open browser: {e}. Please manually visit the URL above.");
     }
 
@@ -119,15 +137,23 @@ pub async fn run_oauth_flow(
 
     info!("Received authorization code, exchanging for tokens...");
 
-    // Exchange authorization code for tokens
-    let refresh_token = exchange_code_for_tokens(
-        &auth_code,
-        &client_id,
-        &redirect_uri,
-        &code_verifier,
-        client,
-    )
-    .await?;
+    // Exchange authorization code for tokens using oauth2 crate
+    let token_result = oauth_client
+        .exchange_code(AuthorizationCode::new(auth_code))
+        .set_pkce_verifier(pkce_verifier)
+        .request_async(async_http_client)
+        .await
+        .map_err(|e| JugglerError::oauth(format!("Token exchange failed: {e}")))?;
+
+    let refresh_token = token_result
+        .refresh_token()
+        .ok_or_else(|| {
+            JugglerError::oauth(
+                "No refresh token in response. This might happen if you've already granted permission. Try revoking access at https://myaccount.google.com/permissions and try again.",
+            )
+        })?
+        .secret()
+        .to_string();
 
     Ok(OAuthResult { refresh_token })
 }
@@ -235,84 +261,6 @@ async fn handle_callback(
                 .into(),
         ))
         .unwrap()
-}
-
-fn build_auth_url(client_id: &str, redirect_uri: &str, code_challenge: &str) -> String {
-    let mut url = Url::parse(GOOGLE_OAUTH_AUTHORIZE_URL).unwrap();
-
-    url.query_pairs_mut()
-        .append_pair("client_id", client_id)
-        .append_pair("redirect_uri", redirect_uri)
-        .append_pair("response_type", "code")
-        .append_pair("scope", GOOGLE_TASKS_SCOPE)
-        .append_pair("access_type", "offline")
-        .append_pair("prompt", "consent")
-        .append_pair("code_challenge", code_challenge)
-        .append_pair("code_challenge_method", "S256");
-
-    url.to_string()
-}
-
-async fn exchange_code_for_tokens(
-    auth_code: &str,
-    client_id: &str,
-    redirect_uri: &str,
-    code_verifier: &str,
-    client: &reqwest::Client,
-) -> Result<String> {
-    let params = vec![
-        ("client_id", client_id),
-        ("code", auth_code),
-        ("grant_type", "authorization_code"),
-        ("redirect_uri", redirect_uri),
-        ("code_verifier", code_verifier),
-        ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
-    ];
-
-    // Debug log the parameters being sent (excluding sensitive data)
-    info!("Token exchange parameters:");
-    info!("  client_id: {client_id}");
-    info!("  grant_type: authorization_code");
-    info!("  redirect_uri: {redirect_uri}");
-    info!("  code_verifier: [PRESENT - {} chars]", code_verifier.len());
-    info!("  code: [PRESENT - {} chars]", auth_code.len());
-    info!("  client_secret: [PRESENT - embedded]");
-
-    let response = client
-        .post(GOOGLE_OAUTH_TOKEN_URL)
-        .form(&params)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(JugglerError::oauth(format!(
-            "Token exchange failed: {error_text}"
-        )));
-    }
-
-    let token_response: serde_json::Value = response.json().await?;
-
-    if let Some(refresh_token) = token_response.get("refresh_token").and_then(|v| v.as_str()) {
-        Ok(refresh_token.to_string())
-    } else {
-        Err(JugglerError::oauth(
-            "No refresh token in response. This might happen if you've already granted permission. Try revoking access at https://myaccount.google.com/permissions and try again.",
-        ))
-    }
-}
-
-fn generate_code_verifier() -> String {
-    let mut rng = rand::thread_rng();
-    let bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
-    URL_SAFE_NO_PAD.encode(&bytes)
-}
-
-fn generate_code_challenge(code_verifier: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(code_verifier.as_bytes());
-    let digest = hasher.finalize();
-    URL_SAFE_NO_PAD.encode(digest)
 }
 
 fn open_browser(url: &str) -> Result<()> {

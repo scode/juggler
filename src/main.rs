@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
             // OAuth browser login flow
             info!("Starting OAuth login flow...");
 
-            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port, &http_client).await {
+            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
                     match cred_store.store_refresh_token(&result.refresh_token) {
