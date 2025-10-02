@@ -7,6 +7,8 @@ use crate::config::{
     GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
 };
 use crate::error::{JugglerError, Result};
+use crate::time::{SharedClock, system_clock};
+use chrono::Utc;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -16,7 +18,7 @@ use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
-    Scope, TokenResponse, TokenUrl,
+    RefreshToken, Scope, TokenResponse, TokenUrl,
 };
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, oneshot};
@@ -28,6 +30,21 @@ type OAuthSender = Arc<Mutex<Option<oneshot::Sender<std::result::Result<String, 
 // For native/desktop apps, Google treats clients as public and permits embedding the
 // client id and client secret with PKCE. See Google guidance:
 // https://developers.google.com/identity/protocols/oauth2/native-app
+
+#[derive(Debug, Clone)]
+pub struct GoogleOAuthCredentials {
+    pub client_id: String,
+    pub refresh_token: String,
+}
+
+pub struct GoogleOAuthClient {
+    credentials: GoogleOAuthCredentials,
+    pub client: reqwest::Client,
+    cached_access_token: Option<String>,
+    token_expires_at: Option<chrono::DateTime<Utc>>,
+    pub(crate) oauth_token_url: String,
+    clock: SharedClock,
+}
 
 #[derive(Debug)]
 pub struct OAuthResult {
@@ -266,4 +283,239 @@ async fn handle_callback(
 fn open_browser(url: &str) -> Result<()> {
     open::that(url).map_err(|e| JugglerError::Other(format!("Failed to open browser: {e}")))?;
     Ok(())
+}
+
+impl GoogleOAuthClient {
+    pub fn new(credentials: GoogleOAuthCredentials, client: reqwest::Client) -> Self {
+        Self {
+            credentials,
+            client,
+            cached_access_token: None,
+            token_expires_at: None,
+            oauth_token_url: GOOGLE_OAUTH_TOKEN_URL.to_string(),
+            clock: system_clock(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_with_custom_oauth_url(
+        credentials: GoogleOAuthCredentials,
+        client: reqwest::Client,
+        oauth_token_url: String,
+        clock: SharedClock,
+    ) -> Self {
+        Self {
+            credentials,
+            client,
+            cached_access_token: None,
+            token_expires_at: None,
+            oauth_token_url,
+            clock,
+        }
+    }
+
+    pub async fn get_access_token(&mut self) -> Result<String> {
+        if let (Some(token), Some(expires_at)) = (&self.cached_access_token, &self.token_expires_at)
+            && self.clock.now() < *expires_at - chrono::Duration::minutes(5)
+        {
+            return Ok(token.clone());
+        }
+
+        self.refresh_access_token().await
+    }
+
+    #[cfg(test)]
+    pub fn cached_access_token(&self) -> &Option<String> {
+        &self.cached_access_token
+    }
+
+    #[cfg(test)]
+    pub fn token_expires_at(&self) -> &Option<chrono::DateTime<Utc>> {
+        &self.token_expires_at
+    }
+
+    #[cfg(test)]
+    pub fn credentials(&self) -> &GoogleOAuthCredentials {
+        &self.credentials
+    }
+
+    #[cfg(test)]
+    pub fn set_cached_token(&mut self, token: String, expires_at: chrono::DateTime<Utc>) {
+        self.cached_access_token = Some(token);
+        self.token_expires_at = Some(expires_at);
+    }
+
+    async fn refresh_access_token(&mut self) -> Result<String> {
+        info!("Using embedded client_secret for token refresh (desktop/native client)");
+
+        let oauth_client = BasicClient::new(
+            ClientId::new(self.credentials.client_id.clone()),
+            Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
+            AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
+                .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
+            Some(
+                TokenUrl::new(self.oauth_token_url.clone())
+                    .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
+            ),
+        );
+
+        let token_result = oauth_client
+            .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
+            .request_async(async_http_client)
+            .await
+            .map_err(|e| JugglerError::oauth(format!("OAuth token refresh failed: {e}")))?;
+
+        let access_token = token_result.access_token().secret().to_string();
+        let expires_in = token_result
+            .expires_in()
+            .map(|d| d.as_secs())
+            .unwrap_or(3600);
+
+        self.cached_access_token = Some(access_token.clone());
+        self.token_expires_at =
+            Some(self.clock.now() + chrono::Duration::seconds(expires_in as i64));
+
+        Ok(access_token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::time::fixed_clock;
+    use chrono::TimeZone;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const TEST_CLIENT_ID: &str = "test-client-id";
+
+    fn test_clock() -> SharedClock {
+        fixed_clock(chrono::Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_oauth_client_token_refresh() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "new_access_token",
+                "expires_in": 3600,
+                "token_type": "Bearer"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let credentials = GoogleOAuthCredentials {
+            client_id: TEST_CLIENT_ID.to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+        };
+
+        let oauth_token_url = format!("{}/token", mock_server.uri());
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            reqwest::Client::new(),
+            oauth_token_url,
+            test_clock(),
+        );
+
+        assert!(oauth_client.cached_access_token().is_none());
+        assert!(oauth_client.token_expires_at().is_none());
+
+        let token = oauth_client.get_access_token().await.unwrap();
+        assert_eq!(token, "new_access_token");
+        assert!(oauth_client.cached_access_token().is_some());
+        assert!(oauth_client.token_expires_at().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_oauth_client_token_caching() {
+        let credentials = GoogleOAuthCredentials {
+            client_id: TEST_CLIENT_ID.to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+        };
+
+        let clock = test_clock();
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            reqwest::Client::new(),
+            GOOGLE_OAUTH_TOKEN_URL.to_string(),
+            clock.clone(),
+        );
+
+        oauth_client.set_cached_token(
+            "cached_token".to_string(),
+            clock.now() + chrono::Duration::hours(1),
+        );
+
+        let token = oauth_client.get_access_token().await.unwrap();
+        assert_eq!(token, "cached_token");
+    }
+
+    #[tokio::test]
+    async fn test_oauth_token_refresh_failure() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "error": "invalid_grant",
+                "error_description": "The provided authorization grant is invalid"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let credentials = GoogleOAuthCredentials {
+            client_id: TEST_CLIENT_ID.to_string(),
+            refresh_token: "invalid_refresh_token".to_string(),
+        };
+
+        let oauth_token_url = format!("{}/token", mock_server.uri());
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            credentials,
+            reqwest::Client::new(),
+            oauth_token_url,
+            test_clock(),
+        );
+
+        let result = oauth_client.get_access_token().await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("OAuth token refresh failed"));
+    }
+
+    #[tokio::test]
+    async fn test_oauth_credentials_structure() {
+        let credentials = GoogleOAuthCredentials {
+            client_id: TEST_CLIENT_ID.to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+        };
+
+        assert_eq!(credentials.client_id, TEST_CLIENT_ID);
+        assert_eq!(credentials.refresh_token, "test_refresh_token");
+
+        let cloned_credentials = credentials.clone();
+        assert_eq!(cloned_credentials.client_id, credentials.client_id);
+        assert_eq!(cloned_credentials.refresh_token, credentials.refresh_token);
+    }
+
+    #[tokio::test]
+    async fn test_oauth_client_initialization() {
+        let credentials = GoogleOAuthCredentials {
+            client_id: TEST_CLIENT_ID.to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+        };
+
+        let oauth_client = GoogleOAuthClient::new(credentials.clone(), reqwest::Client::new());
+
+        assert_eq!(oauth_client.credentials().client_id, credentials.client_id);
+        assert_eq!(
+            oauth_client.credentials().refresh_token,
+            credentials.refresh_token
+        );
+        assert!(oauth_client.cached_access_token().is_none());
+        assert!(oauth_client.token_expires_at().is_none());
+        assert_eq!(oauth_client.oauth_token_url, GOOGLE_OAUTH_TOKEN_URL);
+    }
 }
