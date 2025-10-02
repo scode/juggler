@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build and Development Commands
 
 - `cargo build` - Build the project
-- `cargo test` - Run all tests  
+- `cargo test` - Run all tests
 - `cargo fmt` - Format code (include changes in PRs)
 - `cargo clippy` - Run linter
 - `cargo run` - Run the TODO juggler TUI application
@@ -118,3 +118,9 @@ The application reads from `~/.juggler/TODOs.yaml` on startup and automatically 
 - **tokio**: Async runtime for API operations and OAuth flows
 - **serde/serde_yaml**: Serialization for YAML data persistence
 - **keyring**: OS keychain integration to securely store OAuth refresh tokens
+
+### Coding guidelines
+- Do not add comments that just state "what" something is doing, unless for some reason it is exceedingly unclear.
+- Do not add any comments that speak to the reader as if they are reviewing a diff. The comment should address
+  the reader as if they are reading a snapshot of the source code without history. For example, comments like
+  "moved this line here" make no sense because it references some action taken in a diff.

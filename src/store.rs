@@ -13,8 +13,6 @@ use crate::error::{JugglerError, Result};
 use crate::time::{Clock, SharedClock, system_clock};
 use crate::ui::Todo;
 
-/// Configuration constants are centralized in the `config` module
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct TodoItem {
     pub title: String,
@@ -39,7 +37,6 @@ pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> 
 }
 
 pub fn edit_todo_item(todo: &Todo) -> Result<Todo> {
-    // Convert Todo to TodoItem for serialization
     let todo_item = TodoItem {
         title: todo.title.clone(),
         comment: todo.comment.clone(),
@@ -48,38 +45,25 @@ pub fn edit_todo_item(todo: &Todo) -> Result<Todo> {
         google_task_id: todo.google_task_id.clone(),
     };
 
-    // Serialize to YAML
     let yaml_content = serde_yaml::to_string(&todo_item)?;
 
-    // Create secure temporary file with .yaml extension
     let mut temp_file = NamedTempFile::with_suffix(".yaml")?;
     temp_file.write_all(yaml_content.as_bytes())?;
     temp_file.flush()?;
 
-    // Get the path to the temp file
     let temp_path = temp_file.path();
-
-    // Get editor from environment or default to configured value
     let editor = env::var("EDITOR").unwrap_or_else(|_| DEFAULT_EDITOR.to_string());
 
-    // Launch editor
     let status = Command::new(&editor).arg(temp_path).status()?;
-
     if !status.success() {
         return Err(JugglerError::Other(format!(
             "Editor {editor} exited with non-zero status"
         )));
     }
 
-    // Read back the modified content
     let modified_content = fs::read_to_string(temp_path)?;
-
-    // Temp file is automatically cleaned up when temp_file goes out of scope
-
-    // Parse the modified YAML
     let modified_item: TodoItem = serde_yaml::from_str(&modified_content)?;
 
-    // Convert back to Todo, preserving UI state
     let mut updated_todo: Todo = modified_item.into();
     updated_todo.expanded = todo.expanded;
     updated_todo.selected = todo.selected;
@@ -94,12 +78,10 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
 ) -> Result<()> {
     let file_path = file_path.as_ref();
 
-    // Ensure the directory exists with restricted permissions
     if let Some(parent) = file_path.parent()
         && !parent.exists()
     {
         fs::create_dir_all(parent)?;
-        // Set directory permissions to owner-only (0o700) on Unix systems
         #[cfg(unix)]
         {
             let mut perms = fs::metadata(parent)?.permissions();
@@ -108,12 +90,10 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
         }
     }
 
-    // Archive existing file if it exists
     if file_path.exists() {
         archive_todos_file(file_path, clock.as_ref())?;
     }
 
-    // Convert Todo items to TodoItem for serialization
     let mut todo_items: Vec<TodoItem> = todos
         .iter()
         .map(|todo| TodoItem {
@@ -134,10 +114,8 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
         (None, None) => a.title.cmp(&b.title),
     });
 
-    // Serialize to YAML
     let yaml_content = serde_yaml::to_string(&todo_items)?;
 
-    // Get the directory of the target file for temporary file creation
     let target_dir = file_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
@@ -147,12 +125,10 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
         let file = temp_file.as_file_mut();
         file.write_all(yaml_content.as_bytes())?;
 
-        // Ensure data is written to disk before rename
         file.flush()?;
         file.sync_all()?;
     }
 
-    // Atomically replace the original file
     temp_file
         .persist(file_path)
         .map_err(|e| JugglerError::Io(e.error))?;
@@ -194,7 +170,6 @@ mod tests {
     fn load_todos_parses_comments() {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
-        // Find Item 1 in the loaded todos (order is not guaranteed by load_todos)
         let item1 = todos.iter().find(|t| t.title == "Item 1").expect("Item 1");
         let comment = item1.comment.as_deref().expect("comment for Item 1");
         assert!(comment.starts_with("This is a comment for item 1."));
@@ -207,7 +182,6 @@ mod tests {
         let todos = load_todos(DEFAULT_TODOS_FILE).expect("load TODOs");
         assert_eq!(todos.len(), 6);
 
-        // Find the completed task
         let completed = todos
             .iter()
             .find(|t| t.title == "Completed task example")
@@ -235,7 +209,6 @@ mod tests {
         let yaml = serde_yaml::to_string(&item).expect("serialize to YAML");
         assert!(yaml.contains("title: Test item"));
         assert!(yaml.contains("comment: Test comment"));
-        // All fields should now be present
         assert!(yaml.contains("done: false"));
         assert!(yaml.contains("due_date: null"));
     }
@@ -258,11 +231,9 @@ comment: "Test comment"
     fn store_todos_roundtrip() {
         use tempfile::TempDir;
 
-        // Create a temporary directory for testing
         let temp_dir = TempDir::new().expect("create temp dir");
         let test_file = temp_dir.path().join("test_todos.yaml");
 
-        // Create test todos
         let test_todos = vec![
             Todo {
                 title: "Test todo 1".to_string(),
@@ -288,19 +259,12 @@ comment: "Test comment"
             },
         ];
 
-        // Store the todos
         store_todos(&test_todos, &test_file).expect("store todos");
-
-        // Verify the file was created
         assert!(test_file.exists());
 
-        // Load them back
         let loaded_todos = load_todos(&test_file).expect("load todos");
-
-        // Verify they match (accounting for sorting by due date)
         assert_eq!(loaded_todos.len(), test_todos.len());
 
-        // Find todos by title since order may change due to sorting
         let loaded_todo1 = loaded_todos
             .iter()
             .find(|t| t.title == "Test todo 1")
@@ -323,11 +287,9 @@ comment: "Test comment"
     fn store_todos_creates_archive() {
         use tempfile::TempDir;
 
-        // Create a temporary directory for testing
         let temp_dir = TempDir::new().expect("create temp dir");
         let test_file = temp_dir.path().join("test_todos.yaml");
 
-        // Create initial todos
         let initial_todos = vec![Todo {
             title: "Initial todo".to_string(),
             comment: None,
@@ -343,14 +305,10 @@ comment: "Test comment"
             .with_timezone(&Utc);
         let clock = fixed_clock(fixed_now);
 
-        // Store the initial todos
         store_todos_with_clock(&initial_todos, &test_file, clock.clone())
             .expect("store initial todos");
-
-        // Verify the file was created
         assert!(test_file.exists());
 
-        // Create updated todos
         let updated_todos = vec![Todo {
             title: "Updated todo".to_string(),
             comment: None,
@@ -361,24 +319,18 @@ comment: "Test comment"
             google_task_id: None,
         }];
 
-        // Store the updated todos (should create archive)
         store_todos_with_clock(&updated_todos, &test_file, clock.clone())
             .expect("store updated todos");
-
-        // Verify the updated file exists
         assert!(test_file.exists());
 
-        // Verify the archive file was created with deterministic name
         let expected_archive = format!("TODOs_{}.yaml", fixed_now.format("%Y-%m-%dT%H-%M-%S"));
         let archive_path = temp_dir.path().join(&expected_archive);
         assert!(archive_path.exists());
 
-        // Verify the archive contains the initial content
         let archived_todos = load_todos(&archive_path).expect("load archived todos");
         assert_eq!(archived_todos.len(), 1);
         assert_eq!(archived_todos[0].title, "Initial todo");
 
-        // Verify the current file contains the updated content
         let current_todos = load_todos(&test_file).expect("load current todos");
         assert_eq!(current_todos.len(), 1);
         assert_eq!(current_todos[0].title, "Updated todo");
@@ -409,8 +361,6 @@ comment: "Test comment"
 
         // Store the todos (this will create the parent directory if missing)
         store_todos(&todos, &test_file).expect("store todos");
-
-        // Verify file exists and has 0600 permissions
         assert!(test_file.exists());
         let file_mode = fs::metadata(&test_file)
             .expect("file metadata")
@@ -423,7 +373,6 @@ comment: "Test comment"
             file_mode
         );
 
-        // Verify the created directory has 0700 permissions
         let dir_mode = fs::metadata(&nested_dir)
             .expect("dir metadata")
             .permissions()
@@ -439,14 +388,11 @@ comment: "Test comment"
     fn load_todos_handles_missing_file() {
         use tempfile::TempDir;
 
-        // Create a temporary directory for testing
         let temp_dir = TempDir::new().expect("create temp dir");
         let non_existent_file = temp_dir.path().join("non_existent_todos.yaml");
 
-        // Try to load from a non-existent file
         let todos = load_todos(&non_existent_file).expect("load todos from non-existent file");
 
-        // Should return empty vector
         assert_eq!(todos.len(), 0);
     }
 
@@ -510,10 +456,7 @@ comment: "Test comment"
 
         store_todos(&todos, &test_file).expect("store todos");
 
-        // Load and verify order
         let loaded = load_todos(&test_file).expect("load todos");
-
-        // Expected order: items with google_task_id sorted by ID, then items without ID sorted by title
         assert_eq!(loaded[0].title, "Banana"); // id_1
         assert_eq!(loaded[1].title, "Date"); // id_2
         assert_eq!(loaded[2].title, "Zebra"); // id_3
