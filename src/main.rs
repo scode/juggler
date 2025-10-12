@@ -188,7 +188,7 @@ async fn main() -> Result<()> {
                 // Always save local TODOs before attempting any sync. If the sync is slow
                 // and the user kills the process or something, we want to make sure we don't
                 // *locally* lose their changes.
-                if let Err(e) = store_todos(app.items(), &todos_file) {
+                if let Err(e) = store_todos(&app.items(), &todos_file) {
                     error!("Warning: Failed to save todos before sync: {e}");
                 }
 
@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
 
                 match create_oauth_client_from_keychain(&cred_store, http_client) {
                     Ok(oauth_client) => {
-                        let mut todos: Vec<_> = app.items().to_vec();
+                        let mut todos = app.items();
 
                         let sync_result =
                             sync_to_tasks_with_oauth(&mut todos, oauth_client, false).await;
@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
                         error!("Skipping sync. Todos were saved prior to sync attempt.");
                     }
                 }
-            } else if let Err(e) = store_todos(app.items(), &todos_file) {
+            } else if let Err(e) = store_todos(&app.items(), &todos_file) {
                 error!("Warning: Failed to save todos: {e}");
             }
 
