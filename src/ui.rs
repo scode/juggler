@@ -162,6 +162,110 @@ pub enum DueDateUrgency {
     Normal,
 }
 
+#[derive(Debug, Clone)]
+struct TodoItems {
+    pending: Vec<Todo>,
+    done: Vec<Todo>,
+}
+
+impl TodoItems {
+    /// Create a new TodoItems collection from a flat list of todos.
+    /// Items are sorted by due date before being split into pending/done.
+    fn new(mut items: Vec<Todo>) -> Self {
+        // Sort by due date (items without due dates go to the end)
+        items.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
+
+        let mut pending = Vec::new();
+        let mut done = Vec::new();
+
+        for item in items {
+            if item.done {
+                done.push(item);
+            } else {
+                pending.push(item);
+            }
+        }
+
+        Self { pending, done }
+    }
+
+    /// Get a reference to an item by section and index
+    fn get(&self, section: Section, index: usize) -> Option<&Todo> {
+        match section {
+            Section::Pending => self.pending.get(index),
+            Section::Done => self.done.get(index),
+        }
+    }
+
+    /// Get a mutable reference to an item by section and index
+    fn get_mut(&mut self, section: Section, index: usize) -> Option<&mut Todo> {
+        match section {
+            Section::Pending => self.pending.get_mut(index),
+            Section::Done => self.done.get_mut(index),
+        }
+    }
+
+    fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn done_count(&self) -> usize {
+        self.done.len()
+    }
+
+    /// Move an item from pending to done or vice versa
+    fn toggle_done(&mut self, section: Section, index: usize) {
+        match section {
+            Section::Pending => {
+                if index < self.pending.len() {
+                    let mut item = self.pending.remove(index);
+                    item.done = true;
+                    item.expanded = false;
+                    item.selected = false;
+                    self.done.push(item);
+                }
+            }
+            Section::Done => {
+                if index < self.done.len() {
+                    let mut item = self.done.remove(index);
+                    item.done = false;
+                    item.selected = false;
+                    self.pending.push(item);
+                }
+            }
+        }
+    }
+
+    /// Convert back to a flat Vec containing pending items followed
+    /// by done items.
+    fn to_vec(&self) -> Vec<Todo> {
+        self.pending
+            .iter()
+            .chain(self.done.iter())
+            .cloned()
+            .collect()
+    }
+
+    /// Iterator over pending items with their section indices
+    fn pending_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
+        self.pending.iter().enumerate()
+    }
+
+    /// Iterator over done items with their section indices
+    fn done_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
+        self.done.iter().enumerate()
+    }
+
+    /// Add a new item to the appropriate section
+    fn push(&mut self, item: Todo) {
+        if item.done {
+            self.done.push(item);
+        } else {
+            self.pending.push(item);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum PromptAction {
     CustomDelay,
@@ -222,20 +326,148 @@ impl Widget for PromptWidget {
 pub struct App<T: TodoEditor> {
     exit: bool,
     sync_on_exit: bool,
-    items: Vec<Todo>,
-    pending_count: usize,
-    current_section: Section,
-    pending_index: usize,
-    done_index: usize,
+    items: TodoItems,
+    ui_state: UiState,
     editor: T,
     clock: SharedClock,
     prompt_overlay: Option<PromptOverlay>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Section {
     Pending,
     Done,
+}
+
+#[derive(Debug, Clone)]
+struct UiState {
+    current_section: Section,
+    pending_index: usize,
+    done_index: usize,
+}
+
+impl UiState {
+    fn new(pending_count: usize) -> Self {
+        let current_section = if pending_count > 0 {
+            Section::Pending
+        } else {
+            Section::Done
+        };
+
+        Self {
+            current_section,
+            pending_index: 0,
+            done_index: 0,
+        }
+    }
+
+    fn select_next(&mut self, pending_count: usize, done_count: usize) {
+        match self.current_section {
+            Section::Pending => {
+                if pending_count > 0 {
+                    self.pending_index += 1;
+                    if self.pending_index >= pending_count {
+                        // Move to done section if available
+                        if done_count > 0 {
+                            self.current_section = Section::Done;
+                            self.done_index = 0;
+                        } else {
+                            // Wrap around to beginning of pending
+                            self.pending_index = 0;
+                        }
+                    }
+                }
+            }
+            Section::Done => {
+                if done_count > 0 {
+                    self.done_index += 1;
+                    if self.done_index >= done_count {
+                        // Move to pending section if available
+                        if pending_count > 0 {
+                            self.current_section = Section::Pending;
+                            self.pending_index = 0;
+                        } else {
+                            // Wrap around to beginning of done
+                            self.done_index = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn select_previous(&mut self, pending_count: usize, done_count: usize) {
+        match self.current_section {
+            Section::Pending => {
+                if pending_count > 0 {
+                    if self.pending_index == 0 {
+                        // Move to end of done section if available
+                        if done_count > 0 {
+                            self.current_section = Section::Done;
+                            self.done_index = done_count - 1;
+                        } else {
+                            // Wrap around to end of pending
+                            self.pending_index = pending_count - 1;
+                        }
+                    } else {
+                        self.pending_index -= 1;
+                    }
+                }
+            }
+            Section::Done => {
+                if done_count > 0 {
+                    if self.done_index == 0 {
+                        // Move to end of pending section if available
+                        if pending_count > 0 {
+                            self.current_section = Section::Pending;
+                            self.pending_index = pending_count - 1;
+                        } else {
+                            // Wrap around to end of done
+                            self.done_index = done_count - 1;
+                        }
+                    } else {
+                        self.done_index -= 1;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the current section index (either pending_index or done_index)
+    fn current_index(&self) -> usize {
+        match self.current_section {
+            Section::Pending => self.pending_index,
+            Section::Done => self.done_index,
+        }
+    }
+
+    /// Get a mutable reference to the currently cursored item
+    fn get_cursored_item_mut<'a>(&self, items: &'a mut TodoItems) -> Option<&'a mut Todo> {
+        items.get_mut(self.current_section, self.current_index())
+    }
+
+    fn adjust_indices(&mut self, pending_count: usize, done_count: usize) {
+        // Clamp indices to valid ranges
+        if pending_count == 0 {
+            self.pending_index = 0;
+            if self.current_section == Section::Pending && done_count > 0 {
+                self.current_section = Section::Done;
+                self.done_index = 0;
+            }
+        } else if self.pending_index >= pending_count {
+            self.pending_index = pending_count - 1;
+        }
+
+        if done_count == 0 {
+            self.done_index = 0;
+            if self.current_section == Section::Done && pending_count > 0 {
+                self.current_section = Section::Pending;
+                self.pending_index = 0;
+            }
+        } else if self.done_index >= done_count {
+            self.done_index = done_count - 1;
+        }
+    }
 }
 
 impl<T: TodoEditor> App<T> {
@@ -243,8 +475,8 @@ impl<T: TodoEditor> App<T> {
         Self::new_with_clock(items, editor, system_clock())
     }
 
-    pub fn items(&self) -> &[Todo] {
-        &self.items
+    pub fn items(&self) -> Vec<Todo> {
+        self.items.to_vec()
     }
 
     pub fn should_sync_on_exit(&self) -> bool {
@@ -252,26 +484,14 @@ impl<T: TodoEditor> App<T> {
     }
 
     pub fn new_with_clock(items: Vec<Todo>, editor: T, clock: SharedClock) -> Self {
-        // Sort items by due date for display purposes
-        // Items without due dates go to the end
-        let mut sorted_items = items;
-        sorted_items.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
-
-        let pending_count = sorted_items.iter().filter(|item| !item.done).count();
-        let current_section = if pending_count > 0 {
-            Section::Pending
-        } else {
-            Section::Done
-        };
+        let items = TodoItems::new(items);
+        let ui_state = UiState::new(items.pending_count());
 
         App {
             exit: false,
             sync_on_exit: false,
-            items: sorted_items,
-            pending_count,
-            current_section,
-            pending_index: 0,
-            done_index: 0,
+            items,
+            ui_state,
             editor,
             clock,
             prompt_overlay: None,
@@ -289,11 +509,9 @@ impl<T: TodoEditor> App<T> {
     fn render_pending_section(&self) -> List<'_> {
         let pending_items: Vec<_> = self
             .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| !item.done)
-            .map(|(original_idx, _)| {
-                ratatui::widgets::ListItem::new(self.display_text_internal(original_idx))
+            .pending_iter()
+            .map(|(idx, _)| {
+                ratatui::widgets::ListItem::new(self.display_text_internal(Section::Pending, idx))
             })
             .collect();
 
@@ -303,11 +521,9 @@ impl<T: TodoEditor> App<T> {
     fn render_done_section(&self) -> List<'_> {
         let done_items: Vec<_> = self
             .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item.done)
-            .map(|(original_idx, _)| {
-                let mut text = self.display_text_internal(original_idx);
+            .done_iter()
+            .map(|(idx, _)| {
+                let mut text = self.display_text_internal(Section::Done, idx);
                 // Apply crossed-out style to all spans
                 for line in &mut text.lines {
                     for span in &mut line.spans {
@@ -354,17 +570,17 @@ impl<T: TodoEditor> App<T> {
         let pending_widget = self.render_pending_section();
         let done_widget = self.render_done_section();
 
-        match self.current_section {
+        match self.ui_state.current_section {
             Section::Pending => {
                 let mut pending_state = ListState::default();
-                pending_state.select(Some(self.pending_index));
+                pending_state.select(Some(self.ui_state.pending_index));
                 frame.render_stateful_widget(pending_widget, sections[0], &mut pending_state);
                 frame.render_widget(done_widget, sections[1]);
             }
             Section::Done => {
                 frame.render_widget(pending_widget, sections[0]);
                 let mut done_state = ListState::default();
-                done_state.select(Some(self.done_index));
+                done_state.select(Some(self.ui_state.done_index));
                 frame.render_stateful_widget(done_widget, sections[1], &mut done_state);
             }
         }
@@ -372,9 +588,10 @@ impl<T: TodoEditor> App<T> {
         self.render_help_or_prompt(help_area, frame);
     }
 
-    fn display_text_internal(&self, index: usize) -> Text<'_> {
-        let todo = &self.items[index];
-        let is_cursored = Some(index) == self.get_cursored_item_index();
+    fn display_text_internal(&self, section: Section, index: usize) -> Text<'_> {
+        let todo = self.items.get(section, index).expect("valid index");
+        let is_cursored =
+            section == self.ui_state.current_section && index == self.ui_state.current_index();
 
         let cursor_prefix = if is_cursored { "▶ " } else { "  " };
         // Single status box: selection takes precedence over done
@@ -534,183 +751,105 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn toggle_cursored_expanded(&mut self) {
-        if let Some(i) = self.get_cursored_item_index()
-            && let Some(item) = self.items.get_mut(i)
-        {
+        if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
             item.expanded = !item.expanded;
         }
     }
 
     fn select_next_internal(&mut self) {
-        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
-        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
-
-        match self.current_section {
-            Section::Pending => {
-                if !pending_items.is_empty() {
-                    self.pending_index += 1;
-                    if self.pending_index >= pending_items.len() {
-                        // Move to done section if available
-                        if !done_items.is_empty() {
-                            self.current_section = Section::Done;
-                            self.done_index = 0;
-                        } else {
-                            // Wrap around to beginning of pending
-                            self.pending_index = 0;
-                        }
-                    }
-                }
-            }
-            Section::Done => {
-                if !done_items.is_empty() {
-                    self.done_index += 1;
-                    if self.done_index >= done_items.len() {
-                        // Move to pending section if available
-                        if !pending_items.is_empty() {
-                            self.current_section = Section::Pending;
-                            self.pending_index = 0;
-                        } else {
-                            // Wrap around to beginning of done
-                            self.done_index = 0;
-                        }
-                    }
-                }
-            }
-        }
+        self.ui_state
+            .select_next(self.items.pending_count(), self.items.done_count());
     }
 
     fn select_previous_internal(&mut self) {
-        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
-        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
-
-        match self.current_section {
-            Section::Pending => {
-                if !pending_items.is_empty() {
-                    if self.pending_index == 0 {
-                        // Move to end of done section if available
-                        if !done_items.is_empty() {
-                            self.current_section = Section::Done;
-                            self.done_index = done_items.len() - 1;
-                        } else {
-                            // Wrap around to end of pending
-                            self.pending_index = pending_items.len() - 1;
-                        }
-                    } else {
-                        self.pending_index -= 1;
-                    }
-                }
-            }
-            Section::Done => {
-                if !done_items.is_empty() {
-                    if self.done_index == 0 {
-                        // Move to end of pending section if available
-                        if !pending_items.is_empty() {
-                            self.current_section = Section::Pending;
-                            self.pending_index = pending_items.len() - 1;
-                        } else {
-                            // Wrap around to end of done
-                            self.done_index = done_items.len() - 1;
-                        }
-                    } else {
-                        self.done_index -= 1;
-                    }
-                }
-            }
-        }
+        self.ui_state
+            .select_previous(self.items.pending_count(), self.items.done_count());
     }
 
     fn toggle_done(&mut self) {
-        let selected_indices: Vec<usize> = self
+        // Collect selected items from both sections
+        let mut pending_selected: Vec<usize> = self
             .items
-            .iter()
-            .enumerate()
+            .pending_iter()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+        let mut done_selected: Vec<usize> = self
+            .items
+            .done_iter()
             .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
             .collect();
 
-        if !selected_indices.is_empty() {
-            // If there are selected items, toggle their done status
-            for i in selected_indices {
-                if let Some(item) = self.items.get_mut(i) {
-                    item.done = !item.done;
-                    item.selected = false; // Deselect after toggling
-                    // Collapse item when marked as done
-                    if item.done {
-                        item.expanded = false;
-                    }
-                }
-            }
-        } else if let Some(cursor_idx) = self.get_cursored_item_index() {
-            // If no items are selected, toggle the item under cursor
-            if let Some(item) = self.items.get_mut(cursor_idx) {
-                item.done = !item.done;
-                // Collapse item when marked as done
-                if item.done {
-                    item.expanded = false;
-                }
-            }
-        }
+        if !pending_selected.is_empty() || !done_selected.is_empty() {
+            // Toggle selected items, starting from highest index to avoid invalidation
+            pending_selected.sort_unstable();
+            done_selected.sort_unstable();
 
-        // Update pending count
-        self.pending_count = self.items.iter().filter(|item| !item.done).count();
+            for i in pending_selected.into_iter().rev() {
+                self.items.toggle_done(Section::Pending, i);
+            }
+            for i in done_selected.into_iter().rev() {
+                self.items.toggle_done(Section::Done, i);
+            }
+        } else {
+            // No items selected, toggle the cursored item
+            let section = self.ui_state.current_section;
+            let index = self.ui_state.current_index();
+            self.items.toggle_done(section, index);
+        }
 
         // Adjust indices after toggling done status
         self.adjust_indices_after_toggle();
     }
 
     fn toggle_select(&mut self) {
-        if let Some(i) = self.get_cursored_item_index()
-            && let Some(item) = self.items.get_mut(i)
-        {
+        if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
             item.selected = !item.selected;
         }
     }
 
     fn snooze(&mut self, duration: Duration) {
-        let selected_indices: Vec<usize> = self
+        let now = self.clock.now();
+
+        // Helper to calculate new due date
+        let calculate_new_due = |current_due: Option<DateTime<Utc>>| -> DateTime<Utc> {
+            if let Some(current_due) = current_due {
+                if current_due <= now {
+                    now + duration
+                } else {
+                    current_due + duration
+                }
+            } else {
+                now + duration
+            }
+        };
+
+        // Collect selected items from both sections
+        let pending_selected: Vec<usize> = self
             .items
-            .iter()
-            .enumerate()
+            .pending_iter()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+        let done_selected: Vec<usize> = self
+            .items
+            .done_iter()
             .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
             .collect();
 
-        if !selected_indices.is_empty() {
-            // If there are selected items, snooze them (keep selection for repeated operations)
-            for i in selected_indices {
-                if let Some(item) = self.items.get_mut(i) {
-                    let now = self.clock.now();
-                    let new_due_date = if let Some(current_due) = item.due_date {
-                        if current_due <= now {
-                            // If current due date is in the past, set to current time + snooze period
-                            now + duration
-                        } else {
-                            // If current due date is in the future, add snooze period to existing due date
-                            current_due + duration
-                        }
-                    } else {
-                        // If no due date exists, set to current time + snooze period
-                        now + duration
-                    };
-                    item.due_date = Some(new_due_date);
+        if !pending_selected.is_empty() || !done_selected.is_empty() {
+            // Snooze selected items (keep selection for repeated operations)
+            for i in pending_selected {
+                if let Some(item) = self.items.get_mut(Section::Pending, i) {
+                    item.due_date = Some(calculate_new_due(item.due_date));
                 }
             }
-        } else if let Some(cursor_idx) = self.get_cursored_item_index() {
-            // If no items are selected, snooze the item under cursor
-            if let Some(item) = self.items.get_mut(cursor_idx) {
-                let now = self.clock.now();
-                let new_due_date = if let Some(current_due) = item.due_date {
-                    if current_due <= now {
-                        // If current due date is in the past, set to current time + snooze period
-                        now + duration
-                    } else {
-                        // If current due date is in the future, add snooze period to existing due date
-                        current_due + duration
-                    }
-                } else {
-                    // If no due date exists, set to current time + snooze period
-                    now + duration
-                };
-                item.due_date = Some(new_due_date);
+            for i in done_selected {
+                if let Some(item) = self.items.get_mut(Section::Done, i) {
+                    item.due_date = Some(calculate_new_due(item.due_date));
+                }
             }
+        } else if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
+            // No items selected, snooze the cursored item
+            item.due_date = Some(calculate_new_due(item.due_date));
         }
     }
 
@@ -731,20 +870,35 @@ impl<T: TodoEditor> App<T> {
     }
 
     fn edit_item(&mut self) {
-        if let Some(cursor_idx) = self.get_cursored_item_index()
-            && let Some(item) = self.items.get(cursor_idx)
-        {
+        let section = self.ui_state.current_section;
+        let index = self.ui_state.current_index();
+
+        if let Some(item) = self.items.get(section, index) {
             let result = self.editor.edit_todo(item);
 
             match result {
                 Ok(updated_item) => {
-                    self.items[cursor_idx] = updated_item;
-                    // Update pending count in case done status changed
-                    self.pending_count = self.items.iter().filter(|item| !item.done).count();
+                    // Check if done status changed
+                    let done_changed = item.done != updated_item.done;
+
+                    if done_changed {
+                        // Remove old item and add updated one to correct section
+                        // This is simpler than trying to move between sections
+                        let _ = match section {
+                            Section::Pending => self.items.pending.remove(index),
+                            Section::Done => self.items.done.remove(index),
+                        };
+                        self.items.push(updated_item);
+                        self.adjust_indices_after_toggle();
+                    } else {
+                        // Just update in place
+                        if let Some(existing) = self.items.get_mut(section, index) {
+                            *existing = updated_item;
+                        }
+                    }
                 }
                 Err(_) => {
                     // Editor failed or was cancelled - do nothing
-                    // In a more sophisticated app, we might show an error message
                 }
             }
         }
@@ -770,35 +924,19 @@ impl<T: TodoEditor> App<T> {
                 if !created_item.title.trim().is_empty() {
                     let is_done = created_item.done;
                     self.items.push(created_item);
-                    // Update pending count
-                    self.pending_count = self.items.iter().filter(|item| !item.done).count();
 
-                    // Move cursor to the newly created item
-                    let new_item_idx = self.items.len() - 1;
+                    // Move cursor to the newly created item (at end of appropriate section)
                     if !is_done {
-                        self.current_section = Section::Pending;
-                        self.pending_index = self
-                            .items
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, item)| !item.done)
-                            .position(|(idx, _)| idx == new_item_idx)
-                            .unwrap_or(0);
+                        self.ui_state.current_section = Section::Pending;
+                        self.ui_state.pending_index = self.items.pending_count().saturating_sub(1);
                     } else {
-                        self.current_section = Section::Done;
-                        self.done_index = self
-                            .items
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, item)| item.done)
-                            .position(|(idx, _)| idx == new_item_idx)
-                            .unwrap_or(0);
+                        self.ui_state.current_section = Section::Done;
+                        self.ui_state.done_index = self.items.done_count().saturating_sub(1);
                     }
                 }
             }
             Err(_) => {
                 // Editor failed or was cancelled - do nothing
-                // In a more sophisticated app, we might show an error message
             }
         }
     }
@@ -812,62 +950,9 @@ impl<T: TodoEditor> App<T> {
         self.sync_on_exit = true;
     }
 
-    fn get_cursored_item_index(&self) -> Option<usize> {
-        let pending_items: Vec<(usize, &Todo)> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| !item.done)
-            .collect();
-        let done_items: Vec<(usize, &Todo)> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item.done)
-            .collect();
-
-        match self.current_section {
-            Section::Pending => {
-                if self.pending_index < pending_items.len() {
-                    Some(pending_items[self.pending_index].0)
-                } else {
-                    None
-                }
-            }
-            Section::Done => {
-                if self.done_index < done_items.len() {
-                    Some(done_items[self.done_index].0)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
     fn adjust_indices_after_toggle(&mut self) {
-        let pending_items: Vec<_> = self.items.iter().filter(|item| !item.done).collect();
-        let done_items: Vec<_> = self.items.iter().filter(|item| item.done).collect();
-
-        // Clamp indices to valid ranges
-        if pending_items.is_empty() {
-            self.pending_index = 0;
-            if self.current_section == Section::Pending && !done_items.is_empty() {
-                self.current_section = Section::Done;
-                self.done_index = 0;
-            }
-        } else if self.pending_index >= pending_items.len() {
-            self.pending_index = pending_items.len() - 1;
-        }
-
-        if done_items.is_empty() {
-            self.done_index = 0;
-            if self.current_section == Section::Done && !pending_items.is_empty() {
-                self.current_section = Section::Pending;
-                self.pending_index = 0;
-            }
-        } else if self.done_index >= done_items.len() {
-            self.done_index = done_items.len() - 1;
-        }
+        self.ui_state
+            .adjust_indices(self.items.pending_count(), self.items.done_count());
     }
 
     fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) {
@@ -884,22 +969,30 @@ impl<T: TodoEditor> App<T> {
         let now = self.clock.now();
         let target_due = now + duration;
 
-        let selected_indices: Vec<usize> = self
+        // Collect selected items from both sections
+        let pending_selected: Vec<usize> = self
             .items
-            .iter()
-            .enumerate()
+            .pending_iter()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+            .collect();
+        let done_selected: Vec<usize> = self
+            .items
+            .done_iter()
             .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
             .collect();
 
-        if !selected_indices.is_empty() {
-            for i in selected_indices {
-                if let Some(item) = self.items.get_mut(i) {
+        if !pending_selected.is_empty() || !done_selected.is_empty() {
+            for i in pending_selected {
+                if let Some(item) = self.items.get_mut(Section::Pending, i) {
                     item.due_date = Some(target_due);
                 }
             }
-        } else if let Some(cursor_idx) = self.get_cursored_item_index()
-            && let Some(item) = self.items.get_mut(cursor_idx)
-        {
+            for i in done_selected {
+                if let Some(item) = self.items.get_mut(Section::Done, i) {
+                    item.due_date = Some(target_due);
+                }
+            }
+        } else if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
             item.due_date = Some(target_due);
         }
     }
@@ -1008,6 +1101,11 @@ mod tests {
             .join("\n")
     }
 
+    // Helper to get all items as a flat Vec for testing
+    fn get_all_items<T: TodoEditor>(app: &App<T>) -> Vec<Todo> {
+        app.items.to_vec()
+    }
+
     // Test-only editor that doesn't do anything
     struct NoOpEditor;
 
@@ -1056,9 +1154,9 @@ mod tests {
         }];
         let mut app = App::new(items, NoOpEditor);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
-        assert!(app.items[0].expanded);
+        assert!(get_all_items(&app)[0].expanded);
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
-        assert!(!app.items[0].expanded);
+        assert!(!get_all_items(&app)[0].expanded);
     }
 
     #[test]
@@ -1184,9 +1282,12 @@ mod tests {
         let base = Utc::now();
         let app = App::new_with_clock(items, NoOpEditor, fixed_clock(base));
 
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] a");
         assert_eq!(
-            text_to_string(&app.display_text_internal(1)),
+            text_to_string(&app.display_text_internal(Section::Pending, 0)),
+            "▶ [ ] a"
+        );
+        assert_eq!(
+            text_to_string(&app.display_text_internal(Section::Pending, 1)),
             "  [ ] b >>>\n           c1\n           c2"
         );
     }
@@ -1207,7 +1308,7 @@ mod tests {
 
         // 50h in the future should render as right-aligned "  2d"
         assert_eq!(
-            text_to_string(&app.display_text_internal(0)),
+            text_to_string(&app.display_text_internal(Section::Pending, 0)),
             "▶ [ ]   2d future task"
         );
     }
@@ -1241,7 +1342,7 @@ mod tests {
         // After sorting by due date, "b" (with due date) comes before "a" (no due date)
         // Index 0 has the cursor by default, so expect cursor prefix
         assert_eq!(
-            text_to_string(&app.display_text_internal(0)),
+            text_to_string(&app.display_text_internal(Section::Pending, 0)),
             "▶ [ ]   2d b >>>\n           c1\n           c2"
         );
     }
@@ -1271,19 +1372,25 @@ mod tests {
         let mut app = App::new(items, NoOpEditor);
 
         // Initially, not selected
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [ ] first");
+        assert_eq!(
+            text_to_string(&app.display_text_internal(Section::Pending, 0)),
+            "▶ [ ] first"
+        );
 
         // Toggle selection on current item
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert_eq!(text_to_string(&app.display_text_internal(0)), "▶ [x] first");
+        assert!(get_all_items(&app)[0].selected);
+        assert_eq!(
+            text_to_string(&app.display_text_internal(Section::Pending, 0)),
+            "▶ [x] first"
+        );
 
         // Move cursor and select second item as well
         app.select_next_internal();
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
-        assert!(app.items[1].selected);
+        assert!(get_all_items(&app)[1].selected);
         assert_eq!(
-            text_to_string(&app.display_text_internal(1)),
+            text_to_string(&app.display_text_internal(Section::Pending, 1)),
             "▶ [x] second"
         );
     }
@@ -1396,13 +1503,13 @@ mod tests {
 
         // Toggle first item from pending to done
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
-        assert!(app.items[0].done);
-        assert_eq!(app.pending_count, 0);
+        assert!(get_all_items(&app)[0].done);
+        assert_eq!(app.items.pending_count(), 0);
 
         // Toggle back to pending
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
-        assert!(!app.items[0].done);
-        assert_eq!(app.pending_count, 1);
+        assert!(!get_all_items(&app)[0].done);
+        assert_eq!(app.items.pending_count(), 1);
     }
 
     #[test]
@@ -1443,15 +1550,21 @@ mod tests {
         // Toggle done - should affect only selected items (0 and 2), not cursor item (1)
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
 
-        assert!(app.items[0].done); // Selected item should be marked done
-        assert!(!app.items[1].done); // Cursor item should remain unchanged
-        assert!(app.items[2].done); // Selected item should be marked done
-        assert_eq!(app.pending_count, 1); // Only one pending item left
+        // After toggling, check by title since items have moved between sections
+        let final_items = get_all_items(&app);
+        let task1 = final_items.iter().find(|t| t.title == "task 1").unwrap();
+        let task2 = final_items.iter().find(|t| t.title == "task 2").unwrap();
+        let task3 = final_items.iter().find(|t| t.title == "task 3").unwrap();
+
+        assert!(task1.done); // Selected item should be marked done
+        assert!(!task2.done); // Cursor item should remain unchanged
+        assert!(task3.done); // Selected item should be marked done
+        assert_eq!(app.items.pending_count(), 1); // Only one pending item left
 
         // Items should be deselected after toggling
-        assert!(!app.items[0].selected);
-        assert!(!app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(!task1.selected);
+        assert!(!task2.selected);
+        assert!(!task3.selected);
     }
 
     #[test]
@@ -1483,9 +1596,9 @@ mod tests {
         // Toggle done - should affect cursor item since no items are selected
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
 
-        assert!(!app.items[0].done); // First item should remain unchanged
-        assert!(app.items[1].done); // Cursor item should be marked done
-        assert_eq!(app.pending_count, 1); // One pending item left
+        assert!(!get_all_items(&app)[0].done); // First item should remain unchanged
+        assert!(get_all_items(&app)[1].done); // Cursor item should be marked done
+        assert_eq!(app.items.pending_count(), 1); // One pending item left
     }
 
     #[test]
@@ -1504,25 +1617,33 @@ mod tests {
 
         // snooze 1d when no due date -> base + 1d (exact)
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let due1 = app.items[0].due_date.expect("due set after snooze day");
+        let due1 = get_all_items(&app)[0]
+            .due_date
+            .expect("due set after snooze day");
         assert_eq!(due1, base + Duration::days(1));
 
         // postpone 7d when due in future -> due + 7d (exact)
         let prev = due1;
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let due2 = app.items[0].due_date.expect("due set after postpone week");
+        let due2 = get_all_items(&app)[0]
+            .due_date
+            .expect("due set after postpone week");
         assert_eq!(due2, prev + Duration::days(7));
 
         // unsnooze 1d when due in future -> due - 1d (exact)
         let prev2 = due2;
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
-        let due3 = app.items[0].due_date.expect("due set after unsnooze day");
+        let due3 = get_all_items(&app)[0]
+            .due_date
+            .expect("due set after unsnooze day");
         assert_eq!(due3, prev2 - Duration::days(1));
 
         // prepone 7d when due in future -> due - 7d (exact)
         let prev3 = due3;
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let due4 = app.items[0].due_date.expect("due set after prepone week");
+        let due4 = get_all_items(&app)[0]
+            .due_date
+            .expect("due set after prepone week");
         assert_eq!(due4, prev3 - Duration::days(7));
     }
 
@@ -1543,7 +1664,7 @@ mod tests {
 
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
 
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
 
         // Should be set to base + 1 day, not past_date + 1 day
         let expected = base + Duration::days(1);
@@ -1569,7 +1690,7 @@ mod tests {
 
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
 
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected_due_date = future_date + Duration::days(1);
 
         // Should add 1 day to the existing future due date
@@ -1594,7 +1715,7 @@ mod tests {
         let base = Utc::now();
         let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base + Duration::days(1);
         assert_eq!(new_due_date, expected);
     }
@@ -1615,7 +1736,7 @@ mod tests {
         let base = Utc::now();
         let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base + Duration::days(7);
         assert_eq!(new_due_date, expected);
     }
@@ -1636,7 +1757,7 @@ mod tests {
         let base = Utc::now();
         let mut app = App::new_with_clock(app.items.to_vec(), NoOpEditor, fixed_clock(base));
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base - Duration::days(7);
         assert_eq!(new_due_date, expected);
     }
@@ -1656,7 +1777,7 @@ mod tests {
         let mut app = App::new(items, NoOpEditor);
 
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         assert_eq!(new_due_date, future_date + Duration::days(7));
     }
 
@@ -1675,7 +1796,7 @@ mod tests {
         let mut app = App::new(items, NoOpEditor);
 
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let new_due_date = app.items[0].due_date.unwrap();
+        let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         assert_eq!(new_due_date, future_date - Duration::days(7));
     }
 
@@ -1730,14 +1851,16 @@ mod tests {
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
 
         // Find items by title since sorting may change order
-        let overdue = app
-            .items
+        let items_after_snooze = get_all_items(&app);
+        let overdue = items_after_snooze
             .iter()
             .find(|t| t.title == "overdue task")
             .unwrap();
-        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
-        let no_due = app
-            .items
+        let future = items_after_snooze
+            .iter()
+            .find(|t| t.title == "future task")
+            .unwrap();
+        let no_due = items_after_snooze
             .iter()
             .find(|t| t.title == "no due date task")
             .unwrap();
@@ -1755,14 +1878,16 @@ mod tests {
 
         // 2) S (unsnooze -1d)
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
-        let overdue = app
-            .items
+        let items_after_unsnooze = get_all_items(&app);
+        let overdue = items_after_unsnooze
             .iter()
             .find(|t| t.title == "overdue task")
             .unwrap();
-        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
-        let no_due = app
-            .items
+        let future = items_after_unsnooze
+            .iter()
+            .find(|t| t.title == "future task")
+            .unwrap();
+        let no_due = items_after_unsnooze
             .iter()
             .find(|t| t.title == "no due date task")
             .unwrap();
@@ -1776,14 +1901,16 @@ mod tests {
 
         // 3) p (postpone +7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        let overdue = app
-            .items
+        let items_after_postpone = get_all_items(&app);
+        let overdue = items_after_postpone
             .iter()
             .find(|t| t.title == "overdue task")
             .unwrap();
-        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
-        let no_due = app
-            .items
+        let future = items_after_postpone
+            .iter()
+            .find(|t| t.title == "future task")
+            .unwrap();
+        let no_due = items_after_postpone
             .iter()
             .find(|t| t.title == "no due date task")
             .unwrap();
@@ -1797,14 +1924,16 @@ mod tests {
 
         // 4) P (prepone -7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        let overdue = app
-            .items
+        let items_after_prepone = get_all_items(&app);
+        let overdue = items_after_prepone
             .iter()
             .find(|t| t.title == "overdue task")
             .unwrap();
-        let future = app.items.iter().find(|t| t.title == "future task").unwrap();
-        let no_due = app
-            .items
+        let future = items_after_prepone
+            .iter()
+            .find(|t| t.title == "future task")
+            .unwrap();
+        let no_due = items_after_prepone
             .iter()
             .find(|t| t.title == "no due date task")
             .unwrap();
@@ -1817,8 +1946,8 @@ mod tests {
         assert_eq!(d3_prep, d3_p - Duration::days(7));
 
         // Not selected item should remain unchanged
-        let not_selected = app
-            .items
+        let final_items = get_all_items(&app);
+        let not_selected = final_items
             .iter()
             .find(|t| t.title == "not selected task")
             .unwrap();
@@ -1862,27 +1991,27 @@ mod tests {
 
         // s (snooze +1d)
         app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert!(app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(get_all_items(&app)[0].selected);
+        assert!(get_all_items(&app)[1].selected);
+        assert!(!get_all_items(&app)[2].selected);
 
         // S (unsnooze -1d)
         app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert!(app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(get_all_items(&app)[0].selected);
+        assert!(get_all_items(&app)[1].selected);
+        assert!(!get_all_items(&app)[2].selected);
 
         // p (postpone +7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert!(app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(get_all_items(&app)[0].selected);
+        assert!(get_all_items(&app)[1].selected);
+        assert!(!get_all_items(&app)[2].selected);
 
         // P (prepone -7d)
         app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert!(app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(get_all_items(&app)[0].selected);
+        assert!(get_all_items(&app)[1].selected);
+        assert!(!get_all_items(&app)[2].selected);
 
         // t (custom delay) -> simulate entering "1d" and pressing Enter
         app.prompt_overlay = Some(super::PromptOverlay {
@@ -1893,9 +2022,9 @@ mod tests {
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.items[0].selected);
-        assert!(app.items[1].selected);
-        assert!(!app.items[2].selected);
+        assert!(get_all_items(&app)[0].selected);
+        assert!(get_all_items(&app)[1].selected);
+        assert!(!get_all_items(&app)[2].selected);
     }
 
     #[test]
@@ -1924,24 +2053,27 @@ mod tests {
         let mut app = App::new(initial_items, mock_editor);
 
         // Verify initial state
-        assert_eq!(app.items.len(), 1);
-        assert_eq!(app.pending_count, 1);
-        assert_eq!(app.current_section, Section::Pending);
-        assert_eq!(app.pending_index, 0);
+        assert_eq!(get_all_items(&app).len(), 1);
+        assert_eq!(app.items.pending_count(), 1);
+        assert_eq!(app.ui_state.current_section, Section::Pending);
+        assert_eq!(app.ui_state.pending_index, 0);
 
         // Create new item
         app.create_new_item();
 
         // Verify new item was added
-        assert_eq!(app.items.len(), 2);
-        assert_eq!(app.items[1].title, "new task");
-        assert_eq!(app.items[1].comment, Some(String::from("new comment")));
-        assert!(!app.items[1].done);
-        assert_eq!(app.pending_count, 2);
+        assert_eq!(get_all_items(&app).len(), 2);
+        assert_eq!(get_all_items(&app)[1].title, "new task");
+        assert_eq!(
+            get_all_items(&app)[1].comment,
+            Some(String::from("new comment"))
+        );
+        assert!(!get_all_items(&app)[1].done);
+        assert_eq!(app.items.pending_count(), 2);
 
         // Verify cursor moved to new item
-        assert_eq!(app.current_section, Section::Pending);
-        assert_eq!(app.pending_index, 1);
+        assert_eq!(app.ui_state.current_section, Section::Pending);
+        assert_eq!(app.ui_state.pending_index, 1);
     }
 
     #[test]
@@ -1970,16 +2102,16 @@ mod tests {
         let mut app = App::new(initial_items, mock_editor);
 
         // Verify initial state
-        assert_eq!(app.items.len(), 1);
-        assert_eq!(app.pending_count, 1);
+        assert_eq!(get_all_items(&app).len(), 1);
+        assert_eq!(app.items.pending_count(), 1);
 
         // Attempt to create new item with empty title
         app.create_new_item();
 
         // Verify item was not added
-        assert_eq!(app.items.len(), 1);
-        assert_eq!(app.pending_count, 1);
-        assert_eq!(app.items[0].title, "existing task");
+        assert_eq!(get_all_items(&app).len(), 1);
+        assert_eq!(app.items.pending_count(), 1);
+        assert_eq!(get_all_items(&app)[0].title, "existing task");
     }
 
     #[test]
@@ -2008,22 +2140,22 @@ mod tests {
         let mut app = App::new(initial_items, mock_editor);
 
         // Verify initial state
-        assert_eq!(app.items.len(), 1);
-        assert_eq!(app.pending_count, 1);
-        assert_eq!(app.current_section, Section::Pending);
+        assert_eq!(get_all_items(&app).len(), 1);
+        assert_eq!(app.items.pending_count(), 1);
+        assert_eq!(app.ui_state.current_section, Section::Pending);
 
         // Create new done item
         app.create_new_item();
 
         // Verify new item was added
-        assert_eq!(app.items.len(), 2);
-        assert_eq!(app.items[1].title, "completed task");
-        assert!(app.items[1].done);
-        assert_eq!(app.pending_count, 1); // Still only 1 pending item
+        assert_eq!(get_all_items(&app).len(), 2);
+        assert_eq!(get_all_items(&app)[1].title, "completed task");
+        assert!(get_all_items(&app)[1].done);
+        assert_eq!(app.items.pending_count(), 1); // Still only 1 pending item
 
         // Verify cursor moved to done section
-        assert_eq!(app.current_section, Section::Done);
-        assert_eq!(app.done_index, 0);
+        assert_eq!(app.ui_state.current_section, Section::Done);
+        assert_eq!(app.ui_state.done_index, 0);
     }
 
     #[test]
@@ -2042,21 +2174,21 @@ mod tests {
         let mut app = App::new(Vec::new(), mock_editor);
 
         // Verify initial state
-        assert_eq!(app.items.len(), 0);
-        assert_eq!(app.pending_count, 0);
+        assert_eq!(get_all_items(&app).len(), 0);
+        assert_eq!(app.items.pending_count(), 0);
 
         // Create new item
         app.create_new_item();
 
         // Verify new item was added
-        assert_eq!(app.items.len(), 1);
-        assert_eq!(app.items[0].title, "first task");
-        assert!(!app.items[0].done);
-        assert_eq!(app.pending_count, 1);
+        assert_eq!(get_all_items(&app).len(), 1);
+        assert_eq!(get_all_items(&app)[0].title, "first task");
+        assert!(!get_all_items(&app)[0].done);
+        assert_eq!(app.items.pending_count(), 1);
 
         // Verify cursor positioned correctly
-        assert_eq!(app.current_section, Section::Pending);
-        assert_eq!(app.pending_index, 0);
+        assert_eq!(app.ui_state.current_section, Section::Pending);
+        assert_eq!(app.ui_state.pending_index, 0);
     }
 
     #[test]
@@ -2139,7 +2271,9 @@ mod tests {
 
         app.handle_prompt_mode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-        let due = app.items[0].due_date.expect("due date should be set");
+        let due = get_all_items(&app)[0]
+            .due_date
+            .expect("due date should be set");
         let expected = base + Duration::days(1);
         assert_eq!(due, expected);
         // Overlay should be cleared
