@@ -286,25 +286,7 @@ impl<T: TodoEditor> App<T> {
         Ok(())
     }
 
-    fn draw_internal(&mut self, frame: &mut Frame) {
-        use ratatui::layout::{Constraint, Direction, Layout};
-
-        let area = frame.area();
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(2)])
-            .split(area);
-
-        let main_area = chunks[0];
-        let help_area = chunks[1];
-
-        // Split main area between pending and done sections
-        let sections = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
-            .split(main_area);
-
-        // Render pending section
+    fn render_pending_section(&self) -> List<'_> {
         let pending_items: Vec<_> = self
             .items
             .iter()
@@ -315,10 +297,10 @@ impl<T: TodoEditor> App<T> {
             })
             .collect();
 
-        let pending_widget =
-            List::new(pending_items).block(Block::default().title("Pending").borders(Borders::ALL));
+        List::new(pending_items).block(Block::default().title("Pending").borders(Borders::ALL))
+    }
 
-        // Render done section
+    fn render_done_section(&self) -> List<'_> {
         let done_items: Vec<_> = self
             .items
             .iter()
@@ -336,10 +318,42 @@ impl<T: TodoEditor> App<T> {
             })
             .collect();
 
-        let done_widget =
-            List::new(done_items).block(Block::default().title("Done").borders(Borders::ALL));
+        List::new(done_items).block(Block::default().title("Done").borders(Borders::ALL))
+    }
 
-        // Determine which section to highlight based on current section
+    fn render_help_or_prompt(&self, area: Rect, frame: &mut Frame) {
+        match &self.prompt_overlay {
+            Some(prompt) => {
+                frame.render_widget(PromptWidget::new(&prompt.message, &prompt.buffer), area);
+            }
+            None => {
+                let help_widget =
+                    Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+                frame.render_widget(help_widget, area);
+            }
+        }
+    }
+
+    fn draw_internal(&mut self, frame: &mut Frame) {
+        use ratatui::layout::{Constraint, Direction, Layout};
+
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(area);
+
+        let main_area = chunks[0];
+        let help_area = chunks[1];
+
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
+            .split(main_area);
+
+        let pending_widget = self.render_pending_section();
+        let done_widget = self.render_done_section();
+
         match self.current_section {
             Section::Pending => {
                 let mut pending_state = ListState::default();
@@ -355,17 +369,7 @@ impl<T: TodoEditor> App<T> {
             }
         }
 
-        match &self.prompt_overlay {
-            Some(prompt) => frame.render_widget(
-                PromptWidget::new(&prompt.message, &prompt.buffer),
-                help_area,
-            ),
-            None => {
-                let help_widget =
-                    Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
-                frame.render_widget(help_widget, help_area);
-            }
-        }
+        self.render_help_or_prompt(help_area, frame);
     }
 
     fn display_text_internal(&self, index: usize) -> Text<'_> {
