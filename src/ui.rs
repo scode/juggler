@@ -256,6 +256,18 @@ impl TodoItems {
         self.done.iter().enumerate()
     }
 
+    /// Iterator over indices of selected pending items
+    fn pending_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        self.pending_iter()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+    }
+
+    /// Iterator over indices of selected done items
+    fn done_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        self.done_iter()
+            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
+    }
+
     /// Add a new item to the appropriate section
     fn push(&mut self, item: Todo) {
         if item.done {
@@ -768,16 +780,8 @@ impl<T: TodoEditor> App<T> {
 
     fn toggle_done(&mut self) {
         // Collect selected items from both sections
-        let mut pending_selected: Vec<usize> = self
-            .items
-            .pending_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
-        let mut done_selected: Vec<usize> = self
-            .items
-            .done_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
+        let mut pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
+        let mut done_selected: Vec<usize> = self.items.done_selected_indices().collect();
 
         if !pending_selected.is_empty() || !done_selected.is_empty() {
             // Toggle selected items, starting from highest index to avoid invalidation
@@ -824,16 +828,8 @@ impl<T: TodoEditor> App<T> {
         };
 
         // Collect selected items from both sections
-        let pending_selected: Vec<usize> = self
-            .items
-            .pending_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
-        let done_selected: Vec<usize> = self
-            .items
-            .done_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
+        let pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
+        let done_selected: Vec<usize> = self.items.done_selected_indices().collect();
 
         if !pending_selected.is_empty() || !done_selected.is_empty() {
             // Snooze selected items (keep selection for repeated operations)
@@ -970,16 +966,8 @@ impl<T: TodoEditor> App<T> {
         let target_due = now + duration;
 
         // Collect selected items from both sections
-        let pending_selected: Vec<usize> = self
-            .items
-            .pending_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
-        let done_selected: Vec<usize> = self
-            .items
-            .done_iter()
-            .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
-            .collect();
+        let pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
+        let done_selected: Vec<usize> = self.items.done_selected_indices().collect();
 
         if !pending_selected.is_empty() || !done_selected.is_empty() {
             for i in pending_selected {
