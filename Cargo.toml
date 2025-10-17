@@ -40,7 +40,7 @@ keyring = { version = "3", features = [
     "vendored",
 ] }
 oauth2 = "4"
-thiserror = "1"
+thiserror = "2"
 
 [dev-dependencies]
 wiremock = "0.6"
