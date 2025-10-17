@@ -39,7 +39,7 @@ keyring = { version = "3", features = [
     "sync-secret-service",
     "vendored",
 ] }
-oauth2 = "4"
+oauth2 = "5"
 thiserror = "1"
 
 [dev-dependencies]
