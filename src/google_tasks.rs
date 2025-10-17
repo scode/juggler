@@ -282,6 +282,60 @@ async fn sync_to_tasks_with_oauth_and_base_url(
     sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url, client).await
 }
 
+fn log_task_diffs(
+    google_task: &GoogleTask,
+    todo: &Todo,
+    task_id: &str,
+    desired_title: &str,
+    desired_notes: &Option<String>,
+    desired_status: &str,
+    desired_due: &Option<String>,
+) {
+    info!("Detected changes for Google Task (ID: {}):", task_id);
+    if google_task.title == desired_title {
+        info!(" - title: not changed");
+    } else {
+        info!(" - title: changed to: '{}'", desired_title);
+    }
+    if &google_task.notes == desired_notes {
+        info!(" - notes: not changed");
+    } else {
+        info!(" - notes: changed to: {}", display_opt(desired_notes));
+    }
+    if (google_task.status == "completed") == todo.done {
+        info!(" - status: not changed");
+    } else {
+        info!(" - status: changed to: '{}'", desired_status);
+    }
+    if due_dates_equivalent(&google_task.due, &todo.due_date) {
+        info!(" - due: not changed");
+    } else {
+        let google_due_str = google_task.due.as_deref().unwrap_or("<none>");
+        let google_date = google_task
+            .due
+            .as_deref()
+            .and_then(parse_google_due_date_naive)
+            .map(|d| d.to_string())
+            .unwrap_or_else(|| "<n/a>".to_string());
+        let todo_date = todo
+            .due_date
+            .map(|d| d.date_naive().to_string())
+            .unwrap_or_else(|| "<none>".to_string());
+        let diff_secs = match (
+            google_task.due.as_deref().and_then(parse_google_due),
+            &todo.due_date,
+        ) {
+            (Some(g), Some(t)) => t.signed_duration_since(g).num_seconds().abs(),
+            _ => 0,
+        };
+        info!(
+            " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
+            google_due_str, google_date, todo_date, diff_secs
+        );
+        info!(" - due: changed to: {}", display_opt(desired_due));
+    }
+}
+
 async fn delete_orphan_tasks(
     google_task_map: std::collections::HashMap<String, GoogleTask>,
     list_id: &str,
@@ -361,7 +415,7 @@ async fn sync_to_tasks_with_base_url(
                         || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
-                        // Compute desired values for comparison/logging
+                        // Compute desired values for the update
                         let desired_title = format!("j:{}", todo.title);
                         let desired_notes: Option<String> = todo.comment.clone();
                         let desired_status = if todo.done {
@@ -369,57 +423,18 @@ async fn sync_to_tasks_with_base_url(
                         } else {
                             "needsAction"
                         };
-                        // Always send midnight Z for due date
                         let desired_due: Option<String> = format_due_midnight_z(&todo.due_date);
 
-                        info!("Detected changes for Google Task (ID: {}):", task_id);
-                        if google_task.title == desired_title {
-                            info!(" - title: not changed");
-                        } else {
-                            info!(" - title: changed to: '{}'", desired_title);
-                        }
-                        if google_task.notes == desired_notes {
-                            info!(" - notes: not changed");
-                        } else {
-                            info!(" - notes: changed to: {}", display_opt(&desired_notes));
-                        }
-                        if (google_task.status == "completed") == todo.done {
-                            info!(" - status: not changed");
-                        } else {
-                            info!(" - status: changed to: '{}'", desired_status);
-                        }
-                        if due_dates_equivalent(&google_task.due, &todo.due_date) {
-                            info!(" - due: not changed");
-                        } else {
-                            // Extra diagnostics
-                            let google_due_str = google_task.due.as_deref().unwrap_or("<none>");
-                            let google_date = google_task
-                                .due
-                                .as_deref()
-                                .and_then(parse_google_due_date_naive)
-                                .map(|d| d.to_string())
-                                .unwrap_or_else(|| "<n/a>".to_string());
-                            let todo_date = todo
-                                .due_date
-                                .map(|d| d.date_naive().to_string())
-                                .unwrap_or_else(|| "<none>".to_string());
-                            let diff_secs = match (
-                                google_task.due.as_deref().and_then(parse_google_due),
-                                &todo.due_date,
-                            ) {
-                                (Some(g), Some(t)) => {
-                                    t.signed_duration_since(g).num_seconds().abs()
-                                }
-                                _ => 0,
-                            };
-                            info!(
-                                " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
-                                google_due_str, google_date, todo_date, diff_secs
-                            );
-                            info!(" - due: changed to: {}", display_opt(&desired_due));
-                        }
+                        log_task_diffs(
+                            &google_task,
+                            todo,
+                            task_id,
+                            &desired_title,
+                            &desired_notes,
+                            desired_status,
+                            &desired_due,
+                        );
 
-                        // Update the task
                         let updated_task = GoogleTask {
                             id: Some(task_id.clone()),
                             title: desired_title,
