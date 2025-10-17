@@ -1,12 +1,11 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::{env, fs, io::Write, process::Command};
+use std::{fs, io::Write};
 
 use tempfile::NamedTempFile;
 
 use chrono::{DateTime, Utc};
 
-use crate::config::DEFAULT_EDITOR;
 use crate::error::{JugglerError, Result};
 use crate::time::{Clock, SharedClock, system_clock};
 use crate::ui::Todo;
@@ -32,41 +31,6 @@ pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> 
     let todos: Vec<Todo> = items.into_iter().map(|item| item.into()).collect();
 
     Ok(todos)
-}
-
-pub fn edit_todo_item(todo: &Todo) -> Result<Todo> {
-    let todo_item = TodoItem {
-        title: todo.title.clone(),
-        comment: todo.comment.clone(),
-        done: todo.done,
-        due_date: todo.due_date,
-        google_task_id: todo.google_task_id.clone(),
-    };
-
-    let yaml_content = serde_yaml::to_string(&todo_item)?;
-
-    let mut temp_file = NamedTempFile::with_suffix(".yaml")?;
-    temp_file.write_all(yaml_content.as_bytes())?;
-    temp_file.flush()?;
-
-    let temp_path = temp_file.path();
-    let editor = env::var("EDITOR").unwrap_or_else(|_| DEFAULT_EDITOR.to_string());
-
-    let status = Command::new(&editor).arg(temp_path).status()?;
-    if !status.success() {
-        return Err(JugglerError::Other(format!(
-            "Editor {editor} exited with non-zero status"
-        )));
-    }
-
-    let modified_content = fs::read_to_string(temp_path)?;
-    let modified_item: TodoItem = serde_yaml::from_str(&modified_content)?;
-
-    let mut updated_todo: Todo = modified_item.into();
-    updated_todo.expanded = todo.expanded;
-    updated_todo.selected = todo.selected;
-
-    Ok(updated_todo)
 }
 
 pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
