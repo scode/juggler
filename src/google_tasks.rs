@@ -273,7 +273,7 @@ pub async fn sync_to_tasks_with_oauth(
     sync_to_tasks_with_oauth_and_base_url(todos, oauth_client, dry_run, GOOGLE_TASKS_BASE_URL).await
 }
 
-pub async fn sync_to_tasks_with_oauth_and_base_url(
+async fn sync_to_tasks_with_oauth_and_base_url(
     todos: &mut [Todo],
     mut oauth_client: GoogleOAuthClient,
     dry_run: bool,
