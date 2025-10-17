@@ -282,6 +282,46 @@ async fn sync_to_tasks_with_oauth_and_base_url(
     sync_to_tasks_with_base_url(todos, &access_token, dry_run, base_url, client).await
 }
 
+async fn delete_orphan_tasks(
+    google_task_map: std::collections::HashMap<String, GoogleTask>,
+    list_id: &str,
+    access_token: &str,
+    dry_run: bool,
+    base_url: &str,
+    client: &reqwest::Client,
+) -> Result<()> {
+    for (task_id, google_task) in google_task_map {
+        info!(
+            "Deleting orphaned Google Task: '{}' (ID: {})",
+            google_task.title, task_id
+        );
+
+        if dry_run {
+            info!(
+                "[DRY RUN] Would delete orphaned task: '{}'",
+                google_task.title
+            );
+        } else {
+            let delete_url = format!("{base_url}/tasks/v1/lists/{list_id}/tasks/{task_id}");
+            let response = client
+                .delete(&delete_url)
+                .bearer_auth(access_token)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                return Err(JugglerError::google_tasks(format!(
+                    "Google Tasks API request failed with status {}: {}",
+                    response.status(),
+                    response.text().await.unwrap_or_default()
+                )));
+            }
+            info!("Deleted orphaned Google Task: '{}'", google_task.title);
+        }
+    }
+    Ok(())
+}
+
 async fn sync_to_tasks_with_base_url(
     todos: &mut [Todo],
     access_token: &str,
@@ -450,38 +490,15 @@ async fn sync_to_tasks_with_base_url(
     }
 
     // Delete any remaining Google Tasks that don't have corresponding todos
-    for (task_id, google_task) in google_task_map {
-        info!(
-            "Deleting orphaned Google Task: '{}' (ID: {})",
-            google_task.title, task_id
-        );
-
-        if dry_run {
-            info!(
-                "[DRY RUN] Would delete orphaned task: '{}'",
-                google_task.title
-            );
-        } else {
-            let delete_url = format!(
-                "{base_url}/tasks/v1/lists/{}/tasks/{task_id}",
-                juggler_list.id
-            );
-            let response = client
-                .delete(&delete_url)
-                .bearer_auth(access_token)
-                .send()
-                .await?;
-
-            if !response.status().is_success() {
-                return Err(JugglerError::google_tasks(format!(
-                    "Google Tasks API request failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
-            info!("Deleted orphaned Google Task: '{}'", google_task.title);
-        }
-    }
+    delete_orphan_tasks(
+        google_task_map,
+        &juggler_list.id,
+        access_token,
+        dry_run,
+        base_url,
+        client,
+    )
+    .await?;
 
     if dry_run {
         info!("DRY RUN complete - no changes were made");
