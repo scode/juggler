@@ -149,6 +149,18 @@ async fn fetch_all_tasklists(
     Ok(all_lists)
 }
 
+fn pick_juggler_list(all_tasklists: Vec<GoogleTaskList>) -> Result<GoogleTaskList> {
+    all_tasklists
+        .into_iter()
+        .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
+        .ok_or_else(|| {
+            JugglerError::google_tasks(format!(
+                "No '{}' task list found in Google Tasks",
+                GOOGLE_TASKS_LIST_NAME
+            ))
+        })
+}
+
 async fn fetch_all_tasks(
     client: &reqwest::Client,
     list_id: &str,
@@ -285,15 +297,7 @@ async fn sync_to_tasks_with_base_url(
 
     // First, find the task list for synchronization (across all pages)
     let all_tasklists = fetch_all_tasklists(client, access_token, base_url).await?;
-    let juggler_list = all_tasklists
-        .into_iter()
-        .find(|list| list.title == GOOGLE_TASKS_LIST_NAME)
-        .ok_or_else(|| {
-            JugglerError::google_tasks(format!(
-                "No '{}' task list found in Google Tasks",
-                GOOGLE_TASKS_LIST_NAME
-            ))
-        })?;
+    let juggler_list = pick_juggler_list(all_tasklists)?;
     info!("Parent task list ID: {}", juggler_list.id);
     // Get all existing tasks from the sync list (across all pages)
     let existing_tasks = fetch_all_tasks(client, &juggler_list.id, access_token, base_url).await?;
