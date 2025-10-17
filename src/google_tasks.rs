@@ -42,19 +42,16 @@ fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
 }
 
-// New: Google Tasks treats 'due' as a date-only field (midnight). Compare by UTC date.
-fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
+// Parse a Google API 'due' RFC3339 string into a full UTC DateTime
+fn parse_google_due(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     chrono::DateTime::parse_from_rfc3339(s)
         .ok()
-        .map(|dt| dt.with_timezone(&chrono::Utc).date_naive())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
 }
 
-// Parse a Google API 'due' RFC3339 string into a full UTC DateTime
-fn google_due_datetime_utc(google_due: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
-    google_due
-        .as_deref()
-        .and_then(|g| chrono::DateTime::parse_from_rfc3339(g).ok())
-        .map(|g| g.with_timezone(&chrono::Utc))
+// Google Tasks treats 'due' as a date-only field (midnight). Extract just the date.
+fn parse_google_due_date_naive(s: &str) -> Option<chrono::NaiveDate> {
+    parse_google_due(s).map(|dt| dt.date_naive())
 }
 
 fn due_dates_same_day_utc(
@@ -90,11 +87,11 @@ fn due_dates_equivalent(
     match (google_due, todo_due) {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
-        (Some(_), Some(t)) => {
+        (Some(g), Some(t)) => {
             if due_dates_same_day_utc(google_due, todo_due) {
                 return true;
             }
-            if let Some(g_utc) = google_due_datetime_utc(google_due) {
+            if let Some(g_utc) = parse_google_due(g) {
                 let diff = t.signed_duration_since(g_utc).num_seconds().abs();
                 return diff < Duration::minutes(1).num_seconds();
             }
@@ -111,17 +108,6 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<chrono::Utc>>) -> Option<St
         let utc_dt = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc);
         utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
     })
-}
-
-// Compute absolute seconds difference between Google 'due' and Todo 'due'.
-fn due_diff_secs(
-    google_due: &Option<String>,
-    todo_due: &Option<chrono::DateTime<chrono::Utc>>,
-) -> i64 {
-    match (google_due_datetime_utc(google_due), todo_due) {
-        (Some(g), Some(t)) => t.signed_duration_since(g).num_seconds().abs(),
-        _ => 0,
-    }
 }
 
 async fn fetch_all_tasklists(
@@ -373,7 +359,15 @@ async fn sync_to_tasks_with_base_url(
                                 .due_date
                                 .map(|d| d.date_naive().to_string())
                                 .unwrap_or_else(|| "<none>".to_string());
-                            let diff_secs = due_diff_secs(&google_task.due, &todo.due_date);
+                            let diff_secs = match (
+                                google_task.due.as_deref().and_then(parse_google_due),
+                                &todo.due_date,
+                            ) {
+                                (Some(g), Some(t)) => {
+                                    t.signed_duration_since(g).num_seconds().abs()
+                                }
+                                _ => 0,
+                            };
                             info!(
                                 " - due: changed (google='{}' date={} vs todo_date={}, |Δ|={}s)",
                                 google_due_str, google_date, todo_date, diff_secs
