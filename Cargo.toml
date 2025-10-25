@@ -8,8 +8,8 @@ edition = "2024"
 repository = "https://github.com/scode/juggler"
 
 [dependencies]
-crossterm = "0"
-ratatui = "0"
+crossterm = "0.29"
+ratatui = "0.29"
 color-eyre = "0"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0"
