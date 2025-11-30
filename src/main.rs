@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
             // TUI mode: original behavior
             let mut terminal = ratatui::init();
             let items = load_todos(&todos_file)?;
-            let mut app = App::new(items, ExternalEditor);
+            let mut app = App::new(items, Box::new(ExternalEditor));
             let app_result = app.run(&mut terminal);
             ratatui::restore();
 
