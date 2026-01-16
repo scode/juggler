@@ -177,7 +177,8 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<chrono::Utc>>) -> Option<St
     use chrono::{NaiveTime, SecondsFormat};
     d.map(|dt| {
         let date = dt.date_naive();
-        let ndt = date.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap());
+        let ndt =
+            date.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).expect("midnight is valid"));
         let utc_dt = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc);
         utc_dt.to_rfc3339_opts(SecondsFormat::Millis, true)
     })
