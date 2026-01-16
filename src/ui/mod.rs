@@ -1041,6 +1041,38 @@ mod tests {
     }
 
     #[test]
+    fn prompt_widget_handles_multibyte_utf8() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        // "café" is 4 characters but 5 bytes (é is 2 bytes in UTF-8).
+        // With width=5, all 4 characters should fit without truncation.
+        // The old bug used byte count (5) > width (5) which was false,
+        // but it compared inconsistently. This test ensures we use
+        // character count correctly.
+        let area = Rect::new(0, 0, 5, 1);
+        let mut buf = Buffer::empty(area);
+
+        PromptWidget::new("", "café!").render(area, &mut buf);
+
+        let line: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
+        assert_eq!(line, "café!");
+    }
+
+    #[test]
+    fn prompt_widget_truncates_multibyte_utf8() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        // "café" is 4 characters. With width=3, only "caf" should render.
+        let area = Rect::new(0, 0, 3, 1);
+        let mut buf = Buffer::empty(area);
+
+        PromptWidget::new("", "café").render(area, &mut buf);
+
+        let line: String = (0..area.width).map(|x| buf[(x, area.y)].symbol()).collect();
+        assert_eq!(line, "caf");
+    }
+
+    #[test]
     fn prompt_mode_key_end_to_end_sets_due_from_now() {
         use crossterm::event::KeyModifiers;
 

@@ -42,7 +42,8 @@ impl Widget for PromptWidget {
         }
 
         let max_width = area.width as usize;
-        let content = if self.text.len() > max_width {
+        let char_count = self.text.chars().count();
+        let content = if char_count > max_width {
             self.text.chars().take(max_width).collect::<String>()
         } else {
             self.text
