@@ -4,7 +4,7 @@ use ratatui::{
     text::{Span, Text},
 };
 
-use crate::config::DUE_SOON_THRESHOLD_SECS;
+use crate::config::{COMMENT_INDENT, DUE_SOON_THRESHOLD_SECS};
 use crate::store::TodoItem;
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl Todo {
         {
             for line in comment.lines() {
                 lines.push(ratatui::text::Line::from(vec![
-                    Span::raw("           "),
+                    Span::raw(COMMENT_INDENT),
                     Span::raw(line),
                 ]));
             }
