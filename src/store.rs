@@ -119,8 +119,31 @@ fn archive_todos_file(file_path: &std::path::Path, clock: &dyn Clock) -> Result<
 
     let now = clock.now();
     let timestamp_str = now.format("%Y-%m-%dT%H-%M-%S").to_string();
-    let archive_name = format!("TODOs_{timestamp_str}.yaml");
-    let archive_path = parent.join(archive_name);
+
+    const MAX_ARCHIVE_ATTEMPTS: u32 = 10_000;
+
+    let archive_path = {
+        let base_name = format!("TODOs_{timestamp_str}.yaml");
+        let base_path = parent.join(&base_name);
+        if !base_path.exists() {
+            base_path
+        } else {
+            let mut counter = 1u32;
+            loop {
+                if counter > MAX_ARCHIVE_ATTEMPTS {
+                    return Err(JugglerError::Other(format!(
+                        "Too many archives with timestamp {timestamp_str}"
+                    )));
+                }
+                let numbered_name = format!("TODOs_{timestamp_str}_{counter}.yaml");
+                let numbered_path = parent.join(&numbered_name);
+                if !numbered_path.exists() {
+                    break numbered_path;
+                }
+                counter += 1;
+            }
+        }
+    };
 
     fs::copy(file_path, archive_path)?;
     Ok(())
@@ -301,6 +324,57 @@ comment: "Test comment"
         let current_todos = load_todos(&test_file).expect("load current todos");
         assert_eq!(current_todos.len(), 1);
         assert_eq!(current_todos[0].title, "Updated todo");
+    }
+
+    #[test]
+    fn store_todos_handles_archive_collision() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let test_file = temp_dir.path().join("test_todos.yaml");
+
+        let todo = Todo {
+            title: "Test todo".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+
+        let fixed_now = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let clock = fixed_clock(fixed_now);
+
+        store_todos_with_clock(std::slice::from_ref(&todo), &test_file, clock.clone())
+            .expect("store 1");
+        store_todos_with_clock(std::slice::from_ref(&todo), &test_file, clock.clone())
+            .expect("store 2");
+        store_todos_with_clock(std::slice::from_ref(&todo), &test_file, clock.clone())
+            .expect("store 3");
+        store_todos_with_clock(std::slice::from_ref(&todo), &test_file, clock).expect("store 4");
+
+        let timestamp = fixed_now.format("%Y-%m-%dT%H-%M-%S");
+        assert!(
+            temp_dir
+                .path()
+                .join(format!("TODOs_{timestamp}.yaml"))
+                .exists()
+        );
+        assert!(
+            temp_dir
+                .path()
+                .join(format!("TODOs_{timestamp}_1.yaml"))
+                .exists()
+        );
+        assert!(
+            temp_dir
+                .path()
+                .join(format!("TODOs_{timestamp}_2.yaml"))
+                .exists()
+        );
     }
 
     #[cfg(unix)]
