@@ -13,6 +13,12 @@ use super::{
     KEY_TOGGLE_DONE, KEY_TOGGLE_EXPAND, KEY_TOGGLE_SELECT, KEY_UNSNOOZE_DAY,
 };
 
+fn sorted_indices<I: Iterator<Item = usize>>(iter: I) -> Vec<usize> {
+    let mut v: Vec<usize> = iter.collect();
+    v.sort_unstable();
+    v
+}
+
 impl App {
     pub(super) fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         match event::read()? {
@@ -120,13 +126,10 @@ impl App {
     }
 
     fn toggle_done(&mut self) {
-        let mut pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
-        let mut done_selected: Vec<usize> = self.items.done_selected_indices().collect();
+        let pending_selected = sorted_indices(self.items.pending_selected_indices());
+        let done_selected = sorted_indices(self.items.done_selected_indices());
 
         if !pending_selected.is_empty() || !done_selected.is_empty() {
-            pending_selected.sort_unstable();
-            done_selected.sort_unstable();
-
             for i in pending_selected.into_iter().rev() {
                 self.items.toggle_done(Section::Pending, i);
             }
