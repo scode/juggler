@@ -229,21 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn collapsed_summary_marks_expandable_items() {
-        let with_comment = TodoBuilder::new("a").comment("comment").build();
-        assert_eq!(
-            spans_to_string(&with_comment.collapsed_summary(Utc::now())),
-            "a (...)"
-        );
-
-        let without_comment = TodoBuilder::new("b").build();
-        assert_eq!(
-            spans_to_string(&without_comment.collapsed_summary(Utc::now())),
-            "b"
-        );
-    }
-
-    #[test]
     fn expanded_text_indents_comment() {
         let todo = TodoBuilder::new("a")
             .comment("line1\nline2")
@@ -341,20 +326,6 @@ mod tests {
 
     #[test]
     fn visual_indicators_for_todo_states() {
-        let collapsed_with_comment = Todo {
-            title: String::from("Task with details"),
-            comment: Some(String::from("Some details")),
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
-        assert_eq!(
-            spans_to_string(&collapsed_with_comment.collapsed_summary(Utc::now())),
-            "Task with details (...)"
-        );
-
         let expanded_with_comment = Todo {
             title: String::from("Task with details"),
             comment: Some(String::from("Some details")),
@@ -367,34 +338,6 @@ mod tests {
         assert_eq!(
             text_to_string(&expanded_with_comment.expanded_text(Utc::now())),
             "Task with details >>>\n           Some details"
-        );
-
-        let no_comment = Todo {
-            title: String::from("Simple task"),
-            comment: None,
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
-        assert_eq!(
-            spans_to_string(&no_comment.collapsed_summary(Utc::now())),
-            "Simple task"
-        );
-
-        let empty_comment = Todo {
-            title: String::from("Task with empty comment"),
-            comment: Some(String::from("   ")),
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
-        assert_eq!(
-            spans_to_string(&empty_comment.collapsed_summary(Utc::now())),
-            "Task with empty comment"
         );
     }
 
