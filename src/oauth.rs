@@ -192,13 +192,13 @@ async fn handle_request(
                 Response::builder()
                     .status(StatusCode::NOT_FOUND)
                     .body(http_body_util::Full::new("Not Found".into()))
-                    .unwrap()
+                    .expect("valid response")
             }
         }
         _ => Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(http_body_util::Full::new("Method Not Allowed".into()))
-            .unwrap(),
+            .expect("valid response"),
     };
 
     Ok(response)
@@ -218,7 +218,7 @@ async fn handle_callback(
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body(http_body_util::Full::new("Missing query parameters".into()))
-                .unwrap();
+                .expect("valid response");
         }
     };
 
@@ -245,7 +245,7 @@ async fn handle_callback(
                 )
                 .into(),
             ))
-            .unwrap();
+            .expect("valid response");
     }
 
     if let Some(code) = params.get("code") {
@@ -266,7 +266,7 @@ async fn handle_callback(
                 </body></html>"#
                     .into(),
             ))
-            .unwrap();
+            .expect("valid response");
     }
 
     let mut tx_guard = oauth_state.tx.lock().await;
@@ -281,7 +281,7 @@ async fn handle_callback(
             "<html><body><h1>Authentication Failed</h1><p>Missing authorization code</p></body></html>"
                 .into(),
         ))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn open_browser(url: &str) -> Result<()> {
