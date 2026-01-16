@@ -17,13 +17,7 @@ pub struct ExternalEditor;
 
 impl TodoEditor for ExternalEditor {
     fn edit_todo(&self, todo: &Todo) -> Result<Todo> {
-        let todo_item = TodoItem {
-            title: todo.title.clone(),
-            comment: todo.comment.clone(),
-            done: todo.done,
-            due_date: todo.due_date,
-            google_task_id: todo.google_task_id.clone(),
-        };
+        let todo_item = TodoItem::from(todo);
 
         let yaml_content = serde_yaml::to_string(&todo_item)?;
 

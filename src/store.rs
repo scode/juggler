@@ -20,6 +20,18 @@ pub struct TodoItem {
     pub google_task_id: Option<String>,
 }
 
+impl From<&Todo> for TodoItem {
+    fn from(todo: &Todo) -> Self {
+        TodoItem {
+            title: todo.title.clone(),
+            comment: todo.comment.clone(),
+            done: todo.done,
+            due_date: todo.due_date,
+            google_task_id: todo.google_task_id.clone(),
+        }
+    }
+}
+
 pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> {
     let content = match fs::read_to_string(&file_path) {
         Ok(content) => content,
@@ -56,16 +68,7 @@ pub fn store_todos_with_clock<P: AsRef<std::path::Path>>(
         archive_todos_file(file_path, clock.as_ref())?;
     }
 
-    let mut todo_items: Vec<TodoItem> = todos
-        .iter()
-        .map(|todo| TodoItem {
-            title: todo.title.clone(),
-            comment: todo.comment.clone(),
-            done: todo.done,
-            due_date: todo.due_date,
-            google_task_id: todo.google_task_id.clone(),
-        })
-        .collect();
+    let mut todo_items: Vec<TodoItem> = todos.iter().map(TodoItem::from).collect();
 
     // Use a deterministic order to optimize the user experience when
     // using "diff -u" on the store manually.
