@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use crate::time::fixed_clock;
 
-    const TEST_TODOS_FILE: &str = "TODOs.yaml";
+    const TEST_TODOS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/TODOs.yaml");
 
     #[test]
     fn load_todos_parses_comments() {
