@@ -156,13 +156,7 @@ async fn main() -> Result<()> {
                     }
 
                     let oauth_client =
-                        match create_oauth_client_from_keychain(&cred_store, http_client.clone()) {
-                            Ok(client) => client,
-                            Err(e) => {
-                                error!("{}", e);
-                                return Err(e);
-                            }
-                        };
+                        create_oauth_client_from_keychain(&cred_store, http_client.clone())?;
 
                     sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
