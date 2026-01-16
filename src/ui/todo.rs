@@ -84,28 +84,6 @@ impl Todo {
             .map(|c| !c.trim().is_empty())
             .unwrap_or(false)
     }
-
-    #[cfg(test)]
-    pub fn collapsed_summary(&self, now: DateTime<Utc>) -> Vec<Span<'_>> {
-        let mut spans = Vec::new();
-
-        if let Some(relative_time) = self.format_relative_time(now) {
-            let color = self
-                .due_date_urgency(now)
-                .map(|u| u.color())
-                .unwrap_or(Color::White);
-            spans.push(Span::styled(
-                format!("{relative_time} "),
-                Style::default().fg(color),
-            ));
-        }
-
-        spans.push(Span::raw(&self.title));
-        if self.has_comment() {
-            spans.push(Span::raw(" (...)"));
-        }
-        spans
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
