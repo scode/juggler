@@ -3,8 +3,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::config::{
-    GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
-    GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
+    DEFAULT_TOKEN_EXPIRY_SECS, GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
 };
 use crate::error::{JugglerError, Result};
 use crate::time::{SharedClock, system_clock};
@@ -364,7 +364,7 @@ impl GoogleOAuthClient {
         let expires_in = token_result
             .expires_in()
             .map(|d| d.as_secs())
-            .unwrap_or(3600);
+            .unwrap_or(DEFAULT_TOKEN_EXPIRY_SECS);
 
         self.cached_access_token = Some(access_token.clone());
         self.token_expires_at =
