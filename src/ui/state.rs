@@ -134,65 +134,52 @@ impl UiState {
     }
 
     pub fn select_next(&mut self, pending_count: usize, done_count: usize) {
-        match self.current_section {
-            Section::Pending => {
-                if pending_count > 0 {
-                    self.pending_index += 1;
-                    if self.pending_index >= pending_count {
-                        if done_count > 0 {
-                            self.current_section = Section::Done;
-                            self.done_index = 0;
-                        } else {
-                            self.pending_index = 0;
-                        }
-                    }
-                }
-            }
-            Section::Done => {
-                if done_count > 0 {
-                    self.done_index += 1;
-                    if self.done_index >= done_count {
-                        if pending_count > 0 {
-                            self.current_section = Section::Pending;
-                            self.pending_index = 0;
-                        } else {
-                            self.done_index = 0;
-                        }
-                    }
-                }
-            }
-        }
+        self.navigate(true, pending_count, done_count);
     }
 
     pub fn select_previous(&mut self, pending_count: usize, done_count: usize) {
-        match self.current_section {
-            Section::Pending => {
-                if pending_count > 0 {
-                    if self.pending_index == 0 {
-                        if done_count > 0 {
-                            self.current_section = Section::Done;
-                            self.done_index = done_count - 1;
-                        } else {
-                            self.pending_index = pending_count - 1;
-                        }
-                    } else {
-                        self.pending_index -= 1;
-                    }
+        self.navigate(false, pending_count, done_count);
+    }
+
+    fn navigate(&mut self, forward: bool, pending_count: usize, done_count: usize) {
+        let (current_count, current_idx, other_count) = match self.current_section {
+            Section::Pending => (pending_count, self.pending_index, done_count),
+            Section::Done => (done_count, self.done_index, pending_count),
+        };
+
+        if current_count == 0 {
+            return;
+        }
+
+        let at_boundary = if forward {
+            current_idx + 1 >= current_count
+        } else {
+            current_idx == 0
+        };
+
+        if at_boundary && other_count > 0 {
+            let other_idx = if forward { 0 } else { other_count - 1 };
+            match self.current_section {
+                Section::Pending => {
+                    self.current_section = Section::Done;
+                    self.done_index = other_idx;
+                }
+                Section::Done => {
+                    self.current_section = Section::Pending;
+                    self.pending_index = other_idx;
                 }
             }
-            Section::Done => {
-                if done_count > 0 {
-                    if self.done_index == 0 {
-                        if pending_count > 0 {
-                            self.current_section = Section::Pending;
-                            self.pending_index = pending_count - 1;
-                        } else {
-                            self.done_index = done_count - 1;
-                        }
-                    } else {
-                        self.done_index -= 1;
-                    }
-                }
+        } else {
+            let new_idx = if at_boundary {
+                if forward { 0 } else { current_count - 1 }
+            } else if forward {
+                current_idx + 1
+            } else {
+                current_idx - 1
+            };
+            match self.current_section {
+                Section::Pending => self.pending_index = new_idx,
+                Section::Done => self.done_index = new_idx,
             }
         }
     }
