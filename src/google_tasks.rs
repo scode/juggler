@@ -546,14 +546,10 @@ mod tests {
     const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
     use super::*;
     use crate::oauth::{GoogleOAuthClient, GoogleOAuthCredentials};
-    use crate::time::{SharedClock, fixed_clock};
+    use crate::time::test_clock;
     use chrono::{TimeZone, Utc};
     use wiremock::matchers::{bearer_token, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn test_clock() -> SharedClock {
-        fixed_clock(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-    }
 
     #[test]
     fn test_due_dates_equivalent_date_only_and_tolerance() {

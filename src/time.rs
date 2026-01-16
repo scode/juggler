@@ -106,6 +106,13 @@ pub fn fixed_clock(now: DateTime<Utc>) -> SharedClock {
     Arc::new(FixedClock::new(now))
 }
 
+/// Create a shared fixed clock at a standard test time (2025-01-01 00:00:00 UTC).
+#[cfg(test)]
+pub fn test_clock() -> SharedClock {
+    use chrono::TimeZone;
+    fixed_clock(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

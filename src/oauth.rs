@@ -377,16 +377,11 @@ impl GoogleOAuthClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::time::fixed_clock;
-    use chrono::TimeZone;
+    use crate::time::test_clock;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const TEST_CLIENT_ID: &str = "test-client-id";
-
-    fn test_clock() -> SharedClock {
-        fixed_clock(chrono::Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-    }
 
     #[tokio::test]
     async fn test_oauth_client_token_refresh() {
