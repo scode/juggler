@@ -83,7 +83,7 @@ impl App {
         } else if key_event.code == KEY_CREATE {
             self.create_new_item();
         } else if key_event.code == KEY_CUSTOM_DELAY {
-            self.handle_custom_delay(terminal);
+            self.handle_custom_delay();
         } else {
             self.handle_key_event_internal(key_event);
         }
@@ -273,8 +273,7 @@ impl App {
             .adjust_indices(self.items.pending_count(), self.items.done_count());
     }
 
-    fn handle_custom_delay(&mut self, terminal: &mut DefaultTerminal) {
-        let _ = terminal;
+    fn handle_custom_delay(&mut self) {
         self.mode = AppMode::Prompt(PromptOverlay {
             message: "Delay (e.g., 5d, -2h, 30m, 45s): ".to_string(),
             buffer: String::new(),
