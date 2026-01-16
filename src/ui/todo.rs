@@ -45,11 +45,10 @@ impl Todo {
         let mut first_line_spans = Vec::new();
 
         if let Some(relative_time) = self.format_relative_time(now) {
-            let color = match self.due_date_urgency(now) {
-                Some(DueDateUrgency::Overdue) => Color::Red,
-                Some(DueDateUrgency::DueSoon) => Color::Yellow,
-                _ => Color::White,
-            };
+            let color = self
+                .due_date_urgency(now)
+                .map(|u| u.color())
+                .unwrap_or(Color::White);
             first_line_spans.push(Span::styled(
                 format!("{relative_time} "),
                 Style::default().fg(color),
@@ -90,11 +89,10 @@ impl Todo {
         let mut spans = Vec::new();
 
         if let Some(relative_time) = self.format_relative_time(now) {
-            let color = match self.due_date_urgency(now) {
-                Some(DueDateUrgency::Overdue) => Color::Red,
-                Some(DueDateUrgency::DueSoon) => Color::Yellow,
-                _ => Color::White,
-            };
+            let color = self
+                .due_date_urgency(now)
+                .map(|u| u.color())
+                .unwrap_or(Color::White);
             spans.push(Span::styled(
                 format!("{relative_time} "),
                 Style::default().fg(color),
@@ -114,6 +112,16 @@ pub enum DueDateUrgency {
     Overdue,
     DueSoon,
     Normal,
+}
+
+impl DueDateUrgency {
+    pub fn color(&self) -> Color {
+        match self {
+            DueDateUrgency::Overdue => Color::Red,
+            DueDateUrgency::DueSoon => Color::Yellow,
+            DueDateUrgency::Normal => Color::White,
+        }
+    }
 }
 
 impl From<TodoItem> for Todo {

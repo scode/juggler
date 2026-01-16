@@ -7,7 +7,6 @@ use ratatui::{
 };
 
 use super::state::Section;
-use super::todo::DueDateUrgency;
 use super::widgets::{AppMode, PromptWidget};
 use super::{App, HELP_TEXT};
 
@@ -111,11 +110,10 @@ impl App {
 
         let now = self.clock.now();
         if let Some(relative_time) = todo.format_relative_time(now) {
-            let color = match todo.due_date_urgency(now) {
-                Some(DueDateUrgency::Overdue) => Color::Red,
-                Some(DueDateUrgency::DueSoon) => Color::Yellow,
-                _ => Color::White,
-            };
+            let color = todo
+                .due_date_urgency(now)
+                .map(|u| u.color())
+                .unwrap_or(Color::White);
             first_line_spans.push(Span::styled(
                 format!("{relative_time} "),
                 Style::default().fg(color),
