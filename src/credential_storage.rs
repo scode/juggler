@@ -14,7 +14,7 @@
 //! - These identifiers should remain stable across app versions to allow retrieval.
 
 use keyring::Entry;
-use log::info;
+use log::debug;
 use std::error::Error;
 use std::fmt;
 
@@ -67,7 +67,7 @@ impl KeyringCredentialStore {
 
 impl CredentialStore for KeyringCredentialStore {
     fn store_refresh_token(&self, refresh_token: &str) -> Result<(), CredentialError> {
-        info!(
+        debug!(
             "Keyring: storing refresh token (service={}, account={})...",
             CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
@@ -77,7 +77,7 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     fn get_refresh_token(&self) -> Result<String, CredentialError> {
-        info!(
+        debug!(
             "Keyring: retrieving refresh token (service={}, account={})...",
             CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
@@ -90,7 +90,7 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     fn delete_refresh_token(&self) -> Result<(), CredentialError> {
-        info!(
+        debug!(
             "Keyring: deleting refresh token (service={}, account={})...",
             CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
