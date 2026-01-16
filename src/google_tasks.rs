@@ -17,6 +17,20 @@ struct GoogleTask {
     completed: Option<String>,
 }
 
+impl GoogleTask {
+    fn from_desired(id: Option<String>, desired: DesiredTaskValues) -> Self {
+        Self {
+            id,
+            title: desired.title,
+            notes: desired.notes,
+            status: desired.status.to_string(),
+            due: desired.due,
+            updated: None,
+            completed: None,
+        }
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct GoogleTasksListResponse {
     items: Option<Vec<GoogleTask>>,
@@ -261,16 +275,7 @@ async fn create_google_task(
     dry_run: bool,
     base_url: &str,
 ) -> Result<()> {
-    let desired = desired_task_values(todo);
-    let new_task = GoogleTask {
-        id: None,
-        title: desired.title,
-        notes: desired.notes,
-        status: desired.status.to_string(),
-        due: desired.due,
-        updated: None,
-        completed: None,
-    };
+    let new_task = GoogleTask::from_desired(None, desired_task_values(todo));
 
     let create_url = format!("{base_url}/tasks/v1/lists/{list_id}/tasks");
 
@@ -447,25 +452,17 @@ async fn sync_to_tasks_with_base_url(
                         || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
+                        let updated_task = GoogleTask::from_desired(Some(task_id.clone()), desired);
+
                         log_task_diffs(
                             &google_task,
                             todo,
                             task_id,
-                            &desired.title,
-                            &desired.notes,
-                            desired.status,
-                            &desired.due,
+                            &updated_task.title,
+                            &updated_task.notes,
+                            &updated_task.status,
+                            &updated_task.due,
                         );
-
-                        let updated_task = GoogleTask {
-                            id: Some(task_id.clone()),
-                            title: desired.title,
-                            notes: desired.notes,
-                            status: desired.status.to_string(),
-                            due: desired.due,
-                            updated: None,
-                            completed: None,
-                        };
 
                         info!(
                             "Updating Google Task: '{}' (ID: {})",
