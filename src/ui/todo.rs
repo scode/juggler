@@ -1,10 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
-use ratatui::{
-    style::{Color, Style},
-    text::{Span, Text},
-};
+use ratatui::style::Color;
 
-use crate::config::{COMMENT_INDENT, DUE_SOON_THRESHOLD_SECS};
+use crate::config::DUE_SOON_THRESHOLD_SECS;
 use crate::store::TodoItem;
 
 #[derive(Debug, Clone)]
@@ -42,7 +39,14 @@ impl Todo {
         })
     }
 
-    pub fn expanded_text(&self, now: DateTime<Utc>) -> Text<'_> {
+    #[cfg(test)]
+    pub fn expanded_text(&self, now: DateTime<Utc>) -> ratatui::text::Text<'_> {
+        use crate::config::COMMENT_INDENT;
+        use ratatui::{
+            style::Style,
+            text::{Span, Text},
+        };
+
         let mut first_line_spans = Vec::new();
 
         if let Some(relative_time) = self.format_relative_time(now) {

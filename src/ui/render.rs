@@ -6,6 +6,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListState, Paragraph},
 };
 
+use crate::config::COMMENT_INDENT;
+
 use super::state::Section;
 use super::widgets::{AppMode, PromptWidget};
 use super::{App, HELP_TEXT};
@@ -140,13 +142,15 @@ impl App {
 
         let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
 
-        if todo.expanded {
-            let expanded_text = todo.expanded_text(now);
-            for (i, line) in expanded_text.lines.iter().enumerate() {
-                if i == 0 {
-                    continue;
-                }
-                lines.push(line.clone());
+        if todo.expanded
+            && has_comment
+            && let Some(comment) = &todo.comment
+        {
+            for line in comment.lines() {
+                lines.push(ratatui::text::Line::from(vec![
+                    Span::raw(COMMENT_INDENT),
+                    Span::raw(line),
+                ]));
             }
         }
 
