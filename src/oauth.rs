@@ -26,6 +26,19 @@ use tokio::sync::{Mutex, oneshot};
 // Type alias to simplify complex type
 type OAuthSender = Arc<Mutex<Option<oneshot::Sender<std::result::Result<String, String>>>>>;
 
+fn create_oauth_client(client_id: &str, token_url: &str) -> Result<BasicClient> {
+    Ok(BasicClient::new(
+        ClientId::new(client_id.to_string()),
+        Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
+        AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
+            .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
+        Some(
+            TokenUrl::new(token_url.to_string())
+                .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
+        ),
+    ))
+}
+
 // OAuth credentials (public desktop client) are embedded via constants in `config.rs`.
 // For native/desktop apps, Google treats clients as public and permits embedding the
 // client id and client secret with PKCE. See Google guidance:
@@ -70,20 +83,11 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
     let redirect_uri = format!("http://localhost:{actual_port}/callback");
 
     // Set up OAuth2 client using the oauth2 crate
-    let oauth_client = BasicClient::new(
-        ClientId::new(GOOGLE_OAUTH_CLIENT_ID.to_string()),
-        Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
-        AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
-            .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
-        Some(
-            TokenUrl::new(GOOGLE_OAUTH_TOKEN_URL.to_string())
-                .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
-        ),
-    )
-    .set_redirect_uri(
-        RedirectUrl::new(redirect_uri.clone())
-            .map_err(|e| JugglerError::oauth(format!("Invalid redirect URI: {e}")))?,
-    );
+    let oauth_client = create_oauth_client(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_TOKEN_URL)?
+        .set_redirect_uri(
+            RedirectUrl::new(redirect_uri.clone())
+                .map_err(|e| JugglerError::oauth(format!("Invalid redirect URI: {e}")))?,
+        );
 
     // Generate PKCE challenge
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -348,16 +352,7 @@ impl GoogleOAuthClient {
     async fn refresh_access_token(&mut self) -> Result<String> {
         info!("Using embedded client_secret for token refresh (desktop/native client)");
 
-        let oauth_client = BasicClient::new(
-            ClientId::new(self.credentials.client_id.clone()),
-            Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
-            AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
-                .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
-            Some(
-                TokenUrl::new(self.oauth_token_url.clone())
-                    .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
-            ),
-        );
+        let oauth_client = create_oauth_client(&self.credentials.client_id, &self.oauth_token_url)?;
 
         let token_result = oauth_client
             .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
