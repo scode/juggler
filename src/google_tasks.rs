@@ -42,6 +42,17 @@ fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
 }
 
+async fn check_api_response(response: reqwest::Response) -> Result<reqwest::Response> {
+    if !response.status().is_success() {
+        return Err(JugglerError::google_tasks(format!(
+            "Google Tasks API request failed with status {}: {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+    Ok(response)
+}
+
 // Parse a Google API 'due' RFC3339 string into a full UTC DateTime
 fn parse_google_due(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     chrono::DateTime::parse_from_rfc3339(s)
@@ -126,14 +137,7 @@ async fn fetch_all_tasklists(
             req = req.query(&[("pageToken", token)]);
         }
 
-        let resp = req.send().await?;
-        if !resp.status().is_success() {
-            return Err(JugglerError::google_tasks(format!(
-                "Google Tasks API request failed with status {}: {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            )));
-        }
+        let resp = check_api_response(req.send().await?).await?;
 
         let payload: GoogleTaskListsResponse = resp.json().await?;
         if let Some(items) = payload.items {
@@ -183,14 +187,7 @@ async fn fetch_all_tasks(
             req = req.query(&[("pageToken", token)]);
         }
 
-        let resp = req.send().await?;
-        if !resp.status().is_success() {
-            return Err(JugglerError::google_tasks(format!(
-                "Google Tasks API request failed with status {}: {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            )));
-        }
+        let resp = check_api_response(req.send().await?).await?;
 
         let payload: GoogleTasksListResponse = resp.json().await?;
         if let Some(items) = payload.items {
@@ -240,20 +237,15 @@ async fn create_google_task(
             new_task.title, new_task.status
         );
     } else {
-        let response = client
-            .post(&create_url)
-            .bearer_auth(access_token)
-            .json(&new_task)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(JugglerError::google_tasks(format!(
-                "Google Tasks API request failed with status {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            )));
-        }
+        let response = check_api_response(
+            client
+                .post(&create_url)
+                .bearer_auth(access_token)
+                .json(&new_task)
+                .send()
+                .await?,
+        )
+        .await?;
 
         let created_task: GoogleTask = response.json().await?;
         todo.google_task_id = created_task.id;
@@ -357,19 +349,14 @@ async fn delete_orphan_tasks(
             );
         } else {
             let delete_url = format!("{base_url}/tasks/v1/lists/{list_id}/tasks/{task_id}");
-            let response = client
-                .delete(&delete_url)
-                .bearer_auth(access_token)
-                .send()
-                .await?;
-
-            if !response.status().is_success() {
-                return Err(JugglerError::google_tasks(format!(
-                    "Google Tasks API request failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
+            check_api_response(
+                client
+                    .delete(&delete_url)
+                    .bearer_auth(access_token)
+                    .send()
+                    .await?,
+            )
+            .await?;
             info!("Deleted orphaned Google Task: '{}'", google_task.title);
         }
     }
@@ -460,20 +447,15 @@ async fn sync_to_tasks_with_base_url(
                                 "{base_url}/tasks/v1/lists/{}/tasks/{task_id}",
                                 juggler_list.id
                             );
-                            let response = client
-                                .put(&update_url)
-                                .bearer_auth(access_token)
-                                .json(&updated_task)
-                                .send()
-                                .await?;
-
-                            if !response.status().is_success() {
-                                return Err(JugglerError::google_tasks(format!(
-                                    "Google Tasks API request failed with status {}: {}",
-                                    response.status(),
-                                    response.text().await.unwrap_or_default()
-                                )));
-                            }
+                            check_api_response(
+                                client
+                                    .put(&update_url)
+                                    .bearer_auth(access_token)
+                                    .json(&updated_task)
+                                    .send()
+                                    .await?,
+                            )
+                            .await?;
                         }
                     }
                 } else {
