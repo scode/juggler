@@ -5,6 +5,9 @@ pub const DEFAULT_EDITOR: &str = "emacs";
 
 pub const DEFAULT_TOKEN_EXPIRY_SECS: u64 = 3600;
 
+/// Indentation for expanded comment lines: cursor (2) + checkbox (4) + time (5) = 11 chars.
+pub const COMMENT_INDENT: &str = "           ";
+
 pub const DUE_SOON_THRESHOLD_SECS: i64 = 172800;
 
 pub const GOOGLE_OAUTH_AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
