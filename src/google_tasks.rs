@@ -183,6 +183,26 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<chrono::Utc>>) -> Option<St
     })
 }
 
+struct DesiredTaskValues {
+    title: String,
+    notes: Option<String>,
+    status: &'static str,
+    due: Option<String>,
+}
+
+fn desired_task_values(todo: &Todo) -> DesiredTaskValues {
+    DesiredTaskValues {
+        title: format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title),
+        notes: todo.comment.clone(),
+        status: if todo.done {
+            "completed"
+        } else {
+            "needsAction"
+        },
+        due: format_due_midnight_z(&todo.due_date),
+    }
+}
+
 async fn fetch_all_tasklists(
     client: &reqwest::Client,
     access_token: &str,
@@ -240,17 +260,13 @@ async fn create_google_task(
     dry_run: bool,
     base_url: &str,
 ) -> Result<()> {
+    let desired = desired_task_values(todo);
     let new_task = GoogleTask {
         id: None,
-        title: format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title),
-        notes: todo.comment.clone(),
-        status: if todo.done {
-            "completed".to_string()
-        } else {
-            "needsAction".to_string()
-        },
-        // Normalize to midnight Z to match Google Tasks semantics
-        due: format_due_midnight_z(&todo.due_date),
+        title: desired.title,
+        notes: desired.notes,
+        status: desired.status.to_string(),
+        due: desired.due,
         updated: None,
         completed: None,
     };
@@ -423,40 +439,29 @@ async fn sync_to_tasks_with_base_url(
             Some(task_id) => {
                 // Todo has a Google Task ID, check if it needs updating
                 if let Some(google_task) = google_task_map.remove(task_id) {
-                    // Task exists, check if it needs updating
-                    let needs_update = google_task.title
-                        != format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title)
-                        || google_task.notes.as_deref() != todo.comment.as_deref()
+                    let desired = desired_task_values(todo);
+                    let needs_update = google_task.title != desired.title
+                        || google_task.notes.as_deref() != desired.notes.as_deref()
                         || (google_task.status == "completed") != todo.done
                         || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
-                        // Compute desired values for the update
-                        let desired_title = format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title);
-                        let desired_notes: Option<String> = todo.comment.clone();
-                        let desired_status = if todo.done {
-                            "completed"
-                        } else {
-                            "needsAction"
-                        };
-                        let desired_due: Option<String> = format_due_midnight_z(&todo.due_date);
-
                         log_task_diffs(
                             &google_task,
                             todo,
                             task_id,
-                            &desired_title,
-                            &desired_notes,
-                            desired_status,
-                            &desired_due,
+                            &desired.title,
+                            &desired.notes,
+                            desired.status,
+                            &desired.due,
                         );
 
                         let updated_task = GoogleTask {
                             id: Some(task_id.clone()),
-                            title: desired_title,
-                            notes: desired_notes,
-                            status: desired_status.to_string(),
-                            due: desired_due,
+                            title: desired.title,
+                            notes: desired.notes,
+                            status: desired.status.to_string(),
+                            due: desired.due,
                             updated: None,
                             completed: None,
                         };
