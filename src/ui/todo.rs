@@ -4,6 +4,7 @@ use ratatui::{
     text::{Span, Text},
 };
 
+use crate::config::DUE_SOON_THRESHOLD_SECS;
 use crate::store::TodoItem;
 
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ impl Todo {
 
             if total_seconds < 0 {
                 DueDateUrgency::Overdue
-            } else if total_seconds <= 172800 {
+            } else if total_seconds <= DUE_SOON_THRESHOLD_SECS {
                 DueDateUrgency::DueSoon
             } else {
                 DueDateUrgency::Normal
