@@ -37,6 +37,32 @@ struct GoogleTaskList {
     title: String,
 }
 
+trait PaginatedResponse {
+    type Item;
+    fn into_items(self) -> Option<Vec<Self::Item>>;
+    fn next_page_token(&self) -> Option<&String>;
+}
+
+impl PaginatedResponse for GoogleTaskListsResponse {
+    type Item = GoogleTaskList;
+    fn into_items(self) -> Option<Vec<Self::Item>> {
+        self.items
+    }
+    fn next_page_token(&self) -> Option<&String> {
+        self.next_page_token.as_ref()
+    }
+}
+
+impl PaginatedResponse for GoogleTasksListResponse {
+    type Item = GoogleTask;
+    fn into_items(self) -> Option<Vec<Self::Item>> {
+        self.items
+    }
+    fn next_page_token(&self) -> Option<&String> {
+        self.next_page_token.as_ref()
+    }
+}
+
 // Helper to display Option<String> values in logs
 fn display_opt(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("<none>")
@@ -51,6 +77,42 @@ async fn check_api_response(response: reqwest::Response) -> Result<reqwest::Resp
         )));
     }
     Ok(response)
+}
+
+async fn fetch_all_paginated<R>(
+    client: &reqwest::Client,
+    access_token: &str,
+    url: &str,
+    query_params: &[(&str, &str)],
+) -> Result<Vec<R::Item>>
+where
+    R: PaginatedResponse + serde::de::DeserializeOwned,
+{
+    let mut all_items: Vec<R::Item> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut req = client.get(url).bearer_auth(access_token);
+        req = req.query(query_params);
+        if let Some(ref token) = page_token {
+            req = req.query(&[("pageToken", token)]);
+        }
+
+        let resp = check_api_response(req.send().await?).await?;
+        let payload: R = resp.json().await?;
+
+        let next_token = payload.next_page_token().cloned();
+        if let Some(items) = payload.into_items() {
+            all_items.extend(items);
+        }
+
+        match next_token {
+            Some(token) if !token.is_empty() => page_token = Some(token),
+            _ => break,
+        }
+    }
+
+    Ok(all_items)
 }
 
 // Parse a Google API 'due' RFC3339 string into a full UTC DateTime
@@ -126,31 +188,14 @@ async fn fetch_all_tasklists(
     access_token: &str,
     base_url: &str,
 ) -> Result<Vec<GoogleTaskList>> {
-    let mut all_lists: Vec<GoogleTaskList> = Vec::new();
-    let mut page_token: Option<String> = None;
-
-    loop {
-        let url = format!("{base_url}/tasks/v1/users/@me/lists");
-        let mut req = client.get(&url).bearer_auth(access_token);
-        req = req.query(&[("maxResults", "100")]);
-        if let Some(ref token) = page_token {
-            req = req.query(&[("pageToken", token)]);
-        }
-
-        let resp = check_api_response(req.send().await?).await?;
-
-        let payload: GoogleTaskListsResponse = resp.json().await?;
-        if let Some(items) = payload.items {
-            all_lists.extend(items);
-        }
-
-        match payload.next_page_token {
-            Some(token) if !token.is_empty() => page_token = Some(token),
-            _ => break,
-        }
-    }
-
-    Ok(all_lists)
+    let url = format!("{base_url}/tasks/v1/users/@me/lists");
+    fetch_all_paginated::<GoogleTaskListsResponse>(
+        client,
+        access_token,
+        &url,
+        &[("maxResults", "100")],
+    )
+    .await
 }
 
 fn pick_juggler_list(all_tasklists: Vec<GoogleTaskList>) -> Result<GoogleTaskList> {
@@ -171,36 +216,19 @@ async fn fetch_all_tasks(
     access_token: &str,
     base_url: &str,
 ) -> Result<Vec<GoogleTask>> {
-    let mut all_tasks: Vec<GoogleTask> = Vec::new();
-    let mut page_token: Option<String> = None;
-
-    loop {
-        let url = format!("{base_url}/tasks/v1/lists/{}/tasks", list_id);
-        let mut req = client.get(&url).bearer_auth(access_token);
-        req = req.query(&[
+    let url = format!("{base_url}/tasks/v1/lists/{}/tasks", list_id);
+    fetch_all_paginated::<GoogleTasksListResponse>(
+        client,
+        access_token,
+        &url,
+        &[
             ("maxResults", "100"),
             ("showCompleted", "true"),
             ("showHidden", "true"),
             ("showDeleted", "false"),
-        ]);
-        if let Some(ref token) = page_token {
-            req = req.query(&[("pageToken", token)]);
-        }
-
-        let resp = check_api_response(req.send().await?).await?;
-
-        let payload: GoogleTasksListResponse = resp.json().await?;
-        if let Some(items) = payload.items {
-            all_tasks.extend(items);
-        }
-
-        match payload.next_page_token {
-            Some(token) if !token.is_empty() => page_token = Some(token),
-            _ => break,
-        }
-    }
-
-    Ok(all_tasks)
+        ],
+    )
+    .await
 }
 
 /// Helper function to create a new Google Task from a Todo
