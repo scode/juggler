@@ -148,39 +148,43 @@ impl App {
         }
     }
 
-    fn snooze(&mut self, duration: Duration) {
-        let now = self.clock.now();
-
-        let calculate_new_due =
-            |current_due: Option<chrono::DateTime<chrono::Utc>>| -> chrono::DateTime<chrono::Utc> {
-                if let Some(current_due) = current_due {
-                    if current_due <= now {
-                        now + duration
-                    } else {
-                        current_due + duration
-                    }
-                } else {
-                    now + duration
-                }
-            };
-
+    fn apply_to_selected_or_cursor<F>(&mut self, mut op: F)
+    where
+        F: FnMut(&mut Todo),
+    {
         let pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
         let done_selected: Vec<usize> = self.items.done_selected_indices().collect();
 
         if !pending_selected.is_empty() || !done_selected.is_empty() {
             for i in pending_selected {
                 if let Some(item) = self.items.get_mut(Section::Pending, i) {
-                    item.due_date = Some(calculate_new_due(item.due_date));
+                    op(item);
                 }
             }
             for i in done_selected {
                 if let Some(item) = self.items.get_mut(Section::Done, i) {
-                    item.due_date = Some(calculate_new_due(item.due_date));
+                    op(item);
                 }
             }
         } else if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
-            item.due_date = Some(calculate_new_due(item.due_date));
+            op(item);
         }
+    }
+
+    fn snooze(&mut self, duration: Duration) {
+        let now = self.clock.now();
+        self.apply_to_selected_or_cursor(|item| {
+            let new_due = if let Some(current_due) = item.due_date {
+                if current_due <= now {
+                    now + duration
+                } else {
+                    current_due + duration
+                }
+            } else {
+                now + duration
+            };
+            item.due_date = Some(new_due);
+        });
     }
 
     fn snooze_day(&mut self) {
@@ -276,25 +280,9 @@ impl App {
     }
 
     fn delay_from_now(&mut self, duration: Duration) {
-        let now = self.clock.now();
-        let target_due = now + duration;
-
-        let pending_selected: Vec<usize> = self.items.pending_selected_indices().collect();
-        let done_selected: Vec<usize> = self.items.done_selected_indices().collect();
-
-        if !pending_selected.is_empty() || !done_selected.is_empty() {
-            for i in pending_selected {
-                if let Some(item) = self.items.get_mut(Section::Pending, i) {
-                    item.due_date = Some(target_due);
-                }
-            }
-            for i in done_selected {
-                if let Some(item) = self.items.get_mut(Section::Done, i) {
-                    item.due_date = Some(target_due);
-                }
-            }
-        } else if let Some(item) = self.ui_state.get_cursored_item_mut(&mut self.items) {
+        let target_due = self.clock.now() + duration;
+        self.apply_to_selected_or_cursor(|item| {
             item.due_date = Some(target_due);
-        }
+        });
     }
 }
