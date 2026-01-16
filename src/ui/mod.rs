@@ -141,17 +141,58 @@ mod tests {
         app.items.to_vec()
     }
 
+    struct TodoBuilder {
+        todo: Todo,
+    }
+
+    impl TodoBuilder {
+        fn new(title: &str) -> Self {
+            Self {
+                todo: Todo {
+                    title: String::from(title),
+                    comment: None,
+                    expanded: false,
+                    done: false,
+                    selected: false,
+                    due_date: None,
+                    google_task_id: None,
+                },
+            }
+        }
+
+        fn comment(mut self, comment: &str) -> Self {
+            self.todo.comment = Some(String::from(comment));
+            self
+        }
+
+        fn expanded(mut self) -> Self {
+            self.todo.expanded = true;
+            self
+        }
+
+        fn done(mut self) -> Self {
+            self.todo.done = true;
+            self
+        }
+
+        fn selected(mut self) -> Self {
+            self.todo.selected = true;
+            self
+        }
+
+        fn due_date(mut self, due: chrono::DateTime<chrono::Utc>) -> Self {
+            self.todo.due_date = Some(due);
+            self
+        }
+
+        fn build(self) -> Todo {
+            self.todo
+        }
+    }
+
     #[test]
     fn toggle_cursored_expanded_via_key_event() {
-        let items = vec![Todo {
-            title: String::from("a"),
-            comment: Some(String::from("comment")),
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        }];
+        let items = vec![TodoBuilder::new("a").comment("comment").build()];
         let mut app = App::new(items, Box::new(NoOpEditor));
         app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
         assert!(get_all_items(&app)[0].expanded);
@@ -161,15 +202,7 @@ mod tests {
 
     #[test]
     fn quit_with_sync_key_sets_sync_flag() {
-        let items = vec![Todo {
-            title: String::from("test item"),
-            comment: None,
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        }];
+        let items = vec![TodoBuilder::new("test item").build()];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
         assert!(!app.exit);
@@ -183,15 +216,7 @@ mod tests {
 
     #[test]
     fn regular_quit_key_does_not_set_sync_flag() {
-        let items = vec![Todo {
-            title: String::from("test item"),
-            comment: None,
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        }];
+        let items = vec![TodoBuilder::new("test item").build()];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
         assert!(!app.exit);
@@ -205,29 +230,13 @@ mod tests {
 
     #[test]
     fn collapsed_summary_marks_expandable_items() {
-        let with_comment = Todo {
-            title: String::from("a"),
-            comment: Some(String::from("comment")),
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
+        let with_comment = TodoBuilder::new("a").comment("comment").build();
         assert_eq!(
             spans_to_string(&with_comment.collapsed_summary(Utc::now())),
             "a (...)"
         );
 
-        let without_comment = Todo {
-            title: String::from("b"),
-            comment: None,
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
+        let without_comment = TodoBuilder::new("b").build();
         assert_eq!(
             spans_to_string(&without_comment.collapsed_summary(Utc::now())),
             "b"
@@ -236,15 +245,10 @@ mod tests {
 
     #[test]
     fn expanded_text_indents_comment() {
-        let todo = Todo {
-            title: String::from("a"),
-            comment: Some(String::from("line1\nline2")),
-            expanded: true,
-            done: false,
-            selected: false,
-            due_date: None,
-            google_task_id: None,
-        };
+        let todo = TodoBuilder::new("a")
+            .comment("line1\nline2")
+            .expanded()
+            .build();
         assert_eq!(
             text_to_string(&todo.expanded_text(Utc::now())),
             "a >>>\n           line1\n           line2"
@@ -254,24 +258,8 @@ mod tests {
     #[test]
     fn display_text_prefixes_cursor() {
         let items = vec![
-            Todo {
-                title: String::from("a"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("b"),
-                comment: Some(String::from("c1\nc2")),
-                expanded: true,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
+            TodoBuilder::new("a").build(),
+            TodoBuilder::new("b").comment("c1\nc2").expanded().build(),
         ];
         let base = Utc::now();
         let app = App::new_with_clock(items, Box::new(NoOpEditor), fixed_clock(base));
@@ -289,15 +277,11 @@ mod tests {
     #[test]
     fn display_text_shows_relative_time_for_future_due_date() {
         let base = Utc::now();
-        let items = vec![Todo {
-            title: String::from("future task"),
-            comment: None,
-            expanded: false,
-            done: false,
-            selected: false,
-            due_date: Some(base + chrono::Duration::hours(50)),
-            google_task_id: None,
-        }];
+        let items = vec![
+            TodoBuilder::new("future task")
+                .due_date(base + chrono::Duration::hours(50))
+                .build(),
+        ];
         let app = App::new_with_clock(items, Box::new(NoOpEditor), fixed_clock(base));
 
         assert_eq!(
@@ -310,24 +294,12 @@ mod tests {
     fn expanded_display_includes_relative_time_and_comment_lines() {
         let base = Utc::now();
         let items = vec![
-            Todo {
-                title: String::from("a"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("b"),
-                comment: Some(String::from("c1\nc2")),
-                expanded: true,
-                done: false,
-                selected: false,
-                due_date: Some(base + chrono::Duration::hours(50)),
-                google_task_id: None,
-            },
+            TodoBuilder::new("a").build(),
+            TodoBuilder::new("b")
+                .comment("c1\nc2")
+                .expanded()
+                .due_date(base + chrono::Duration::hours(50))
+                .build(),
         ];
 
         let app = App::new_with_clock(items, Box::new(NoOpEditor), fixed_clock(base));
@@ -341,24 +313,8 @@ mod tests {
     #[test]
     fn selection_indicator_shows_x_for_selected_items() {
         let items = vec![
-            Todo {
-                title: String::from("first"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("second"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
+            TodoBuilder::new("first").build(),
+            TodoBuilder::new("second").build(),
         ];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
@@ -464,24 +420,8 @@ mod tests {
     #[test]
     fn toggle_done_via_key_event() {
         let items = vec![
-            Todo {
-                title: String::from("pending task"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("done task"),
-                comment: None,
-                expanded: false,
-                done: true,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
+            TodoBuilder::new("pending task").build(),
+            TodoBuilder::new("done task").done().build(),
         ];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
@@ -497,33 +437,9 @@ mod tests {
     #[test]
     fn toggle_done_works_on_selected_items() {
         let items = vec![
-            Todo {
-                title: String::from("task 1"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: true,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("task 2"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: false,
-                due_date: None,
-                google_task_id: None,
-            },
-            Todo {
-                title: String::from("task 3"),
-                comment: None,
-                expanded: false,
-                done: false,
-                selected: true,
-                due_date: None,
-                google_task_id: None,
-            },
+            TodoBuilder::new("task 1").selected().build(),
+            TodoBuilder::new("task 2").build(),
+            TodoBuilder::new("task 3").selected().build(),
         ];
         let mut app = App::new(items, Box::new(NoOpEditor));
         app.select_next_internal();
