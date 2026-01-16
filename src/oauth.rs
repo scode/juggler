@@ -26,16 +26,17 @@ use tokio::sync::{Mutex, oneshot};
 // Type alias to simplify complex type
 type OAuthSender = Arc<Mutex<Option<oneshot::Sender<std::result::Result<String, String>>>>>;
 
+fn oauth_err<E: std::fmt::Display>(context: &str) -> impl FnOnce(E) -> JugglerError + '_ {
+    move |e| JugglerError::oauth(format!("{context}: {e}"))
+}
+
 fn create_oauth_client(client_id: &str, token_url: &str) -> Result<BasicClient> {
     Ok(BasicClient::new(
         ClientId::new(client_id.to_string()),
         Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
         AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
-            .map_err(|e| JugglerError::oauth(format!("Invalid auth URL: {e}")))?,
-        Some(
-            TokenUrl::new(token_url.to_string())
-                .map_err(|e| JugglerError::oauth(format!("Invalid token URL: {e}")))?,
-        ),
+            .map_err(oauth_err("Invalid auth URL"))?,
+        Some(TokenUrl::new(token_url.to_string()).map_err(oauth_err("Invalid token URL"))?),
     ))
 }
 
@@ -85,8 +86,7 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
     // Set up OAuth2 client using the oauth2 crate
     let oauth_client = create_oauth_client(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_TOKEN_URL)?
         .set_redirect_uri(
-            RedirectUrl::new(redirect_uri.clone())
-                .map_err(|e| JugglerError::oauth(format!("Invalid redirect URI: {e}")))?,
+            RedirectUrl::new(redirect_uri.clone()).map_err(oauth_err("Invalid redirect URI"))?,
         );
 
     // Generate PKCE challenge
@@ -164,7 +164,7 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
         .set_pkce_verifier(pkce_verifier)
         .request_async(async_http_client)
         .await
-        .map_err(|e| JugglerError::oauth(format!("Token exchange failed: {e}")))?;
+        .map_err(oauth_err("Token exchange failed"))?;
 
     let refresh_token = token_result
         .refresh_token()
@@ -358,7 +358,7 @@ impl GoogleOAuthClient {
             .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
             .request_async(async_http_client)
             .await
-            .map_err(|e| JugglerError::oauth(format!("OAuth token refresh failed: {e}")))?;
+            .map_err(oauth_err("OAuth token refresh failed"))?;
 
         let access_token = token_result.access_token().secret().to_string();
         let expires_in = token_result
