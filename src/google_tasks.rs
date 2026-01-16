@@ -1,6 +1,6 @@
 use log::info;
 
-use crate::config::{GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
+use crate::config::{GOOGLE_TASK_TITLE_PREFIX, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
 use crate::error::{JugglerError, Result};
 use crate::ui::Todo;
 
@@ -242,7 +242,7 @@ async fn create_google_task(
 ) -> Result<()> {
     let new_task = GoogleTask {
         id: None,
-        title: format!("j:{}", todo.title),
+        title: format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title),
         notes: todo.comment.clone(),
         status: if todo.done {
             "completed".to_string()
@@ -424,14 +424,15 @@ async fn sync_to_tasks_with_base_url(
                 // Todo has a Google Task ID, check if it needs updating
                 if let Some(google_task) = google_task_map.remove(task_id) {
                     // Task exists, check if it needs updating
-                    let needs_update = google_task.title != format!("j:{}", todo.title)
+                    let needs_update = google_task.title
+                        != format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title)
                         || google_task.notes.as_deref() != todo.comment.as_deref()
                         || (google_task.status == "completed") != todo.done
                         || !due_dates_equivalent(&google_task.due, &todo.due_date);
 
                     if needs_update {
                         // Compute desired values for the update
-                        let desired_title = format!("j:{}", todo.title);
+                        let desired_title = format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title);
                         let desired_notes: Option<String> = todo.comment.clone();
                         let desired_status = if todo.done {
                             "completed"
