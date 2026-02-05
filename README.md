@@ -9,7 +9,7 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 - **Terminal User Interface**: Navigate and manage TODOs with keyboard shortcuts
 - **YAML Storage**: TODOs stored in human-readable YAML format with comments and due dates
 - **Due Date Support**: Automatic sorting with overdue items highlighted
-- **External Editor Integration**: Edit TODOs in your preferred editor (via `$EDITOR`)
+- **External Editor Integration**: Edit TODOs in your preferred editor (via `$VISUAL`/`$EDITOR`)
 - **Google Tasks Sync**: One-way synchronization to Google Tasks (local YAML is authoritative)
 - **Completion Tracking**: Mark items as done/undone
 - **Snooze/Prepone**: Quickly adjust due dates by ±1 day or ±7 days, plus custom delays
@@ -60,7 +60,7 @@ cargo run
 - `o` - Toggle expand/collapse on the cursored item
 - `x` - Select/deselect the cursored item
 - `e` - Toggle done on selected items; if none selected, acts on the cursored item
-- `E` - Edit the cursored item in external editor
+- `E` - Edit the cursored item in external editor (`$VISUAL`/`$EDITOR`, supports args)
 - `s` - Snooze selected items by 1 day; if none selected, snooze the cursored item
 - `S` - Unsnooze (minus 1 day) for selected items; if none selected, unsnooze the cursored item
 - `p` - Snooze by 7 days for selected items; if none selected, snooze the cursored item
