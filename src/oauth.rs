@@ -68,6 +68,7 @@ pub struct OAuthResult {
 #[derive(Debug)]
 struct OAuthState {
     tx: OAuthSender,
+    expected_state: String,
 }
 
 pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult> {
@@ -93,7 +94,7 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
     // Build authorization URL
-    let (auth_url, _csrf_token) = oauth_client
+    let (auth_url, csrf_token) = oauth_client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new(GOOGLE_TASKS_SCOPE.to_string()))
         .add_extra_param("access_type", "offline")
@@ -116,6 +117,8 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
 
     let oauth_state = Arc::new(OAuthState {
         tx: Arc::new(Mutex::new(Some(tx))),
+        // The callback must echo this nonce so we can reject forged or cross-session redirects.
+        expected_state: csrf_token.secret().to_string(),
     });
 
     // Handle incoming connections
@@ -226,6 +229,25 @@ async fn handle_callback(
         .into_owned()
         .collect();
 
+    // Enforce OAuth CSRF protection before accepting either success or provider error payloads.
+    if let Err(state_error) = validate_state(&params, &oauth_state.expected_state) {
+        let mut tx_guard = oauth_state.tx.lock().await;
+        if let Some(tx) = tx_guard.take() {
+            let _ = tx.send(Err(state_error.clone()));
+        }
+
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/html")
+            .body(http_body_util::Full::new(
+                format!(
+                    "<html><body><h1>Authentication Failed</h1><p>{state_error}</p></body></html>"
+                )
+                .into(),
+            ))
+            .expect("valid response");
+    }
+
     if let Some(error) = params.get("error") {
         let default_error = "Unknown error".to_string();
         let error_description = params.get("error_description").unwrap_or(&default_error);
@@ -282,6 +304,18 @@ async fn handle_callback(
                 .into(),
         ))
         .expect("valid response")
+}
+
+fn validate_state(
+    params: &HashMap<String, String>,
+    expected_state: &str,
+) -> std::result::Result<(), String> {
+    // Binding callback data to the initiating auth request prevents authorization-code injection.
+    match params.get("state") {
+        Some(state) if state == expected_state => Ok(()),
+        Some(_) => Err("Invalid OAuth state parameter".to_string()),
+        None => Err("Missing OAuth state parameter".to_string()),
+    }
 }
 
 fn open_browser(url: &str) -> Result<()> {
@@ -378,6 +412,7 @@ impl GoogleOAuthClient {
 mod tests {
     use super::*;
     use crate::time::test_clock;
+    use tokio::sync::{Mutex, oneshot};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -507,5 +542,51 @@ mod tests {
         assert!(oauth_client.cached_access_token().is_none());
         assert!(oauth_client.token_expires_at().is_none());
         assert_eq!(oauth_client.oauth_token_url, GOOGLE_OAUTH_TOKEN_URL);
+    }
+
+    fn test_oauth_state(
+        expected_state: &str,
+    ) -> (
+        Arc<OAuthState>,
+        oneshot::Receiver<std::result::Result<String, String>>,
+    ) {
+        let (tx, rx) = oneshot::channel();
+        let state = Arc::new(OAuthState {
+            tx: Arc::new(Mutex::new(Some(tx))),
+            expected_state: expected_state.to_string(),
+        });
+        (state, rx)
+    }
+
+    #[tokio::test]
+    async fn callback_rejects_missing_state_parameter() {
+        let (oauth_state, rx) = test_oauth_state("expected-state");
+        let response = handle_callback(Some("code=test_code"), oauth_state).await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let result = rx.await.expect("callback should send result");
+        assert!(matches!(result, Err(msg) if msg.contains("Missing OAuth state parameter")));
+    }
+
+    #[tokio::test]
+    async fn callback_rejects_mismatched_state_parameter() {
+        let (oauth_state, rx) = test_oauth_state("expected-state");
+        let response =
+            handle_callback(Some("code=test_code&state=unexpected-state"), oauth_state).await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let result = rx.await.expect("callback should send result");
+        assert!(matches!(result, Err(msg) if msg.contains("Invalid OAuth state parameter")));
+    }
+
+    #[tokio::test]
+    async fn callback_accepts_matching_state_parameter() {
+        let (oauth_state, rx) = test_oauth_state("expected-state");
+        let response =
+            handle_callback(Some("code=test_code&state=expected-state"), oauth_state).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let result = rx.await.expect("callback should send result");
+        assert_eq!(result, Ok("test_code".to_string()));
     }
 }
