@@ -25,7 +25,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `src/ui/editor.rs`: External editor integration (`$VISUAL`/`$EDITOR`)
 - `src/store.rs`: TODO model, YAML IO, archiving
 - `src/google_tasks.rs`: REST client, mapping, create/update/delete, dry-run; uses mockable `Clock` for OAuth token expiry
-- `src/oauth.rs`: PKCE browser login, local HTTP callback server
+- `src/oauth.rs`: PKCE browser login, local HTTP callback server, and OAuth `state` validation on callback
 - `src/config.rs`: Constants (e.g., list name, OAuth client id), paths
 - `README.md`: User-facing how-to, commands, examples
 - `CLAUDE.md`: Expanded architectural notes and test guidance
@@ -77,7 +77,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - `ui/editor.rs`: Launches the external editor and maps edited YAML back into `Todo`.
 - `store.rs`: Defines `TodoItem` and list container, YAML serialization/deserialization, load/save, and archival. Uses tempfiles + atomic rename.
 - `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest`, structured logging, and a mockable `Clock` for token expiry.
-- `oauth.rs`: Implements public-client PKCE OAuth, spawns local HTTP server for redirect, opens browser (`open` crate).
+- `oauth.rs`: Implements public-client PKCE OAuth, validates callback `state`, spawns local HTTP server for redirect, opens browser (`open` crate).
 - `credential_storage.rs`: `CredentialStore` trait with two implementations:
   - `KeyringCredentialStore` (real; OS keychain via `keyring`)
   - `InMemoryCredentialStore` (mock; used in tests). Provides store/get/delete refresh token.
