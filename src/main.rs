@@ -22,7 +22,7 @@ use credential_storage::{CredentialStore, KeyringCredentialStore};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
-use ui::{App, ExternalEditor};
+use ui::{App, ExternalEditor, Todo};
 
 fn create_oauth_client_from_keychain(
     cred_store: &dyn CredentialStore,
@@ -40,6 +40,18 @@ fn create_oauth_client_from_keychain(
     };
 
     Ok(GoogleOAuthClient::new(credentials, http_client))
+}
+
+fn maybe_persist_todos_after_sync(
+    todos: &[Todo],
+    todos_file: &std::path::Path,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        info!("Dry-run mode: skipping local TODO save after sync.");
+        return Ok(());
+    }
+    store_todos(todos, todos_file)
 }
 
 #[derive(Parser)]
@@ -161,7 +173,7 @@ async fn main() -> Result<()> {
                     sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
                     // Save the updated todos with new google_task_ids
-                    if let Err(e) = store_todos(&todos, &todos_file) {
+                    if let Err(e) = maybe_persist_todos_after_sync(&todos, &todos_file, dry_run) {
                         error!("Warning: Failed to save todos after sync: {e}");
                         return Err(e);
                     }
@@ -222,4 +234,66 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn make_todo(title: &str) -> Todo {
+        Todo {
+            title: title.to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        }
+    }
+
+    fn archive_file_count(dir: &std::path::Path) -> usize {
+        fs::read_dir(dir)
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with("TODOs_") && name.ends_with(".yaml")
+            })
+            .count()
+    }
+
+    #[test]
+    fn dry_run_sync_does_not_rewrite_local_todos_or_create_archives() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let todos_file = temp_dir.path().join("TODOs.yaml");
+
+        store_todos(&[make_todo("original")], &todos_file).expect("store initial todos");
+        let before = fs::read_to_string(&todos_file).expect("read initial todos file");
+
+        maybe_persist_todos_after_sync(&[make_todo("updated")], &todos_file, true)
+            .expect("dry-run persist should succeed");
+
+        let after = fs::read_to_string(&todos_file).expect("read todos file after dry-run");
+        assert_eq!(before, after);
+        assert_eq!(archive_file_count(temp_dir.path()), 0);
+    }
+
+    #[test]
+    fn non_dry_run_sync_persists_local_todos_and_archives_previous_file() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let todos_file = temp_dir.path().join("TODOs.yaml");
+
+        store_todos(&[make_todo("original")], &todos_file).expect("store initial todos");
+
+        maybe_persist_todos_after_sync(&[make_todo("updated")], &todos_file, false)
+            .expect("persist should succeed");
+
+        let after = fs::read_to_string(&todos_file).expect("read updated todos file");
+        assert!(after.contains("title: updated"));
+        assert_eq!(archive_file_count(temp_dir.path()), 1);
+    }
 }

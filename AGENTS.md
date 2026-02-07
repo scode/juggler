@@ -69,7 +69,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Usage: run `juggler login` once, then `juggler sync google-tasks` (no flags)
 - Logout support: `cargo run -- logout` deletes the stored refresh token from the system keychain
 - Local callback server default port: 8080 (configurable via `--port`)
-- Dry-run shows intended operations without side effects
+- Dry-run shows intended operations without side effects (no Google API writes and no local TODO file/archive writes)
 
 ### Architecture summary (for contributors/agents)
 - `main.rs`: Defines Clap CLI (default TUI, `login`, `sync google-tasks`). Starts Tokio runtime. Dispatches to UI or command handlers.
