@@ -121,6 +121,7 @@ pub(super) fn action_for_key(key_code: KeyCode) -> Option<Action> {
         .map(|binding| binding.action)
 }
 
+#[cfg(test)]
 pub(super) fn key_for_action(action: Action) -> KeyCode {
     KEY_BINDINGS
         .iter()

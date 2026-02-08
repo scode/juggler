@@ -32,7 +32,13 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 
 - **main.rs**: Entry point with Clap CLI handling, async runtime setup, and mode routing (TUI vs CLI)
 - **store.rs**: Data persistence layer with YAML serialization, external editor integration, TODO data structures, and archiving functionality
-- **ui.rs**: TUI implementation with App struct, event handling, rendering logic, and keyboard shortcuts
+- **ui/mod.rs**: TUI runtime orchestration (`App`) and inline side-effect execution
+- **ui/model.rs**: Plain UI model state (`AppModel`, sections, cursor state, prompt mode state)
+- **ui/keymap.rs**: Canonical normal-mode key bindings and generated help footer text
+- **ui/event.rs**: Pure key-event to action mapping
+- **ui/update.rs**: Reducer-style state transitions and optional side-effect requests
+- **ui/view.rs**: Pure rendering over immutable model state
+- **ui/widgets.rs**: Rendering-only widgets (prompt footer)
 - **google_tasks.rs**: Google Tasks API integration with OAuth client, sync operations, and task mapping
 - **oauth.rs**: OAuth 2.0 PKCE flow implementation with local HTTP server for browser authentication
 - **credential_storage.rs**: Keyring-based storage for OAuth refresh tokens (service/account constants and store/get/delete helpers)
@@ -43,7 +49,8 @@ This is a Rust terminal user interface (TUI) application built with Ratatui that
 - **Dual-mode operation**: TUI mode (default) vs CLI mode (sync/login commands)
 - **Async runtime**: Uses Tokio for Google Tasks API operations and OAuth flows
 - **Modular design**: Clear separation between UI, storage, API integration, and main coordination
-- **Event-driven TUI**: Crossterm for input handling with ListState navigation and dual-section layout (pending/done)
+- **Model/update/view TUI split**: input mapping (`event`) -> reducer (`update`) -> pure rendering (`view`) with state in `model`
+- **Inline side-effect pattern**: reducer returns `Option<SideEffect>` for edit/create; `App` executes I/O and applies one follow-up action
 - **External integrations**: Editor integration via trait abstraction, Google Tasks API sync, and OAuth browser flow
 - **Logging**: env_logger for sync operation visibility with configurable levels
 - **Trait-based architecture**: TodoEditor trait allows for different editing backends (external editor, potential future UI editor)
@@ -88,14 +95,18 @@ The application reads from `~/.juggler/TODOs.yaml` on startup and automatically 
 - `GOOGLE_TASKS_LIST_NAME`: Set to "juggler" - the Google Tasks list name for sync operations
 - `GOOGLE_OAUTH_CLIENT_ID`: Hardcoded public OAuth client ID for browser authentication
 - `GOOGLE_OAUTH_CLIENT_SECRET`: Embedded client secret for the desktop/native client; always sent in token exchanges.
-- TUI keyboard shortcuts defined in `ui.rs` constants:
+- TUI keyboard shortcuts defined in `src/ui/keymap.rs`:
   - `j/k` - Navigate up/down between items
   - `o` - Toggle expand/collapse item (show/hide comments)
   - `x` - Toggle select/deselect item for bulk operations
   - `e` - Toggle done status for selected items or current item
   - `E` - Edit current item in external editor
-  - `s/S` - Snooze items by 1 day/1 week
+  - `c` - Create new item
+  - `s/S` - Snooze items by +1 day / -1 day
+  - `p/P` - Snooze items by +7 days / -7 days
+  - `t` - Open custom relative delay prompt (for example `5d`, `-2h`)
   - `q` - Quit and save
+  - `Q` - Quit, save locally, then sync to Google Tasks
 - External editor uses `$EDITOR` environment variable, defaults to "emacs"
 - TODO storage: `~/.juggler/TODOs.yaml` with automatic archiving to timestamped backups
 

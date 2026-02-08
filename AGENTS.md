@@ -19,11 +19,14 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 
 ### Repository layout
 - `src/main.rs`: Entry point, Clap CLI, routing between TUI and commands
-- `src/ui/mod.rs`: TUI app state and orchestration across UI modules
+- `src/ui/mod.rs`: TUI app orchestration and inline side-effect handling
 - `src/ui/keymap.rs`: Canonical normal-mode keymap metadata used by both input dispatch and help footer rendering
-- `src/ui/event.rs`: Input handling and action dispatch
-- `src/ui/render.rs`: Rendering logic
+- `src/ui/event.rs`: Pure input mapping (`read_action`/`map_key`) from key events to update actions
+- `src/ui/model.rs`: Plain UI state (`AppModel`, `Section`, `TodoItems`, `UiState`, prompt mode state)
+- `src/ui/update.rs`: Reducer logic (`Action` -> state changes) and optional side effects (`Option<SideEffect>`)
+- `src/ui/view.rs`: Pure rendering helpers
 - `src/ui/editor.rs`: External editor integration (`$VISUAL`/`$EDITOR`)
+- `src/ui/widgets.rs`: Rendering-only widgets (currently `PromptWidget`)
 - `src/store.rs`: TODO model, YAML IO, archiving
 - `src/google_tasks.rs`: REST client, mapping, create/update/delete, dry-run; uses mockable `Clock` for OAuth token expiry
 - `src/oauth.rs`: PKCE browser login, local HTTP callback server, and OAuth `state` validation on callback
@@ -77,8 +80,13 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 
 ### Architecture summary (for contributors/agents)
 - `main.rs`: Defines Clap CLI (default TUI, `login`, `sync google-tasks`). Starts Tokio runtime. Dispatches to UI or command handlers.
-- `ui/mod.rs`: Owns `App` state and rendering orchestration. Coordinates state transitions and module integration.
-- `ui/keymap.rs`: Defines `Action`, normal-mode key bindings, and generated help footer text from one metadata table.
+- `ui/mod.rs`: Owns runtime dependencies (`TodoEditor`, `SharedClock`) and orchestrates draw -> read action -> update -> optional inline side-effect handling.
+- `ui/model.rs`: Plain state only (`AppModel`, `TodoItems`, `UiState`, prompt mode state), with no runtime dependencies.
+- `ui/keymap.rs`: Defines normal-mode key bindings and generated help footer text from one metadata table.
+- `ui/event.rs`: Maps `KeyEvent` input to update actions; no direct mutation or editor calls.
+- `ui/update.rs`: Reducer logic for navigation/toggles/due-date operations/prompt handling and `Option<SideEffect>` requests for edit/create.
+- `ui/view.rs`: Rendering-only drawing helpers over immutable model state.
+- `ui/widgets.rs`: Prompt widget rendering.
 - `ui/editor.rs`: Launches the external editor and maps edited YAML back into `Todo`.
 - `store.rs`: Defines `TodoItem` and list container, YAML serialization/deserialization, load/save, and archival. Uses tempfiles + atomic rename.
 - `google_tasks.rs`: Maps between `TodoItem` and Google Task. Implements create/update/delete and list reconciliation, ID tracking (`google_task_id`), and dry-run behavior. Uses `reqwest`, structured logging, and a mockable `Clock` for token expiry.
@@ -92,7 +100,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 - Add a CLI flag:
   - Extend Clap in `main.rs`, thread the flag into the relevant module, add tests.
 - Change a key binding or UI behavior:
-  - Update `src/ui/keymap.rs` first (source of truth), then adjust action handling in `src/ui/event.rs` if needed; update README shortcuts if user-visible.
+  - Update `src/ui/keymap.rs` first (source of truth), then adjust reducer behavior in `src/ui/update.rs` and input mapping in `src/ui/event.rs` as needed; update README shortcuts if user-visible.
 - Extend the TODO schema (new field):
   - Update `TodoItem` in `store.rs` with `serde` attributes; ensure load/save round-trips; consider defaulting for backward compat; update sync mapping if relevant.
 - Modify sync mapping or add a new provider:
@@ -103,6 +111,7 @@ A Rust terminal UI (TUI) for managing TODOs stored in YAML with optional one-way
 ### Invariants and pitfalls
 - Local YAML is the single source of truth; sync is strictly one-way to Google.
 - On TUI exit with sync (`Q`), local TODOs are always saved first, then sync runs; on successful sync, TODOs are saved again to persist `google_task_id` updates.
+- TUI side effects are single-step and inline (`Option<SideEffect>`): reducer requests edit/create, `App` executes editor I/O, then feeds one follow-up apply action back into the reducer.
 - `google_task_id` must remain stable per item; deleting it forces re-creation on next sync.
 - Always keep atomic writes + archival semantics intact (tempfile, rename, timestamped backup).
 - Do not log secrets or full tokens; prefer `--dry-run` for previews.
