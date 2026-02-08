@@ -39,49 +39,6 @@ impl Todo {
         })
     }
 
-    #[cfg(test)]
-    pub fn expanded_text(&self, now: DateTime<Utc>) -> ratatui::text::Text<'_> {
-        use crate::config::COMMENT_INDENT;
-        use ratatui::{
-            style::Style,
-            text::{Span, Text},
-        };
-
-        let mut first_line_spans = Vec::new();
-
-        if let Some(relative_time) = self.format_relative_time(now) {
-            let color = self
-                .due_date_urgency(now)
-                .map(|u| u.color())
-                .unwrap_or(Color::White);
-            first_line_spans.push(Span::styled(
-                format!("{relative_time} "),
-                Style::default().fg(color),
-            ));
-        }
-
-        first_line_spans.push(Span::raw(&self.title));
-        let has_comment = self.has_comment();
-        if has_comment {
-            first_line_spans.push(Span::raw(" >>>"));
-        }
-
-        let mut lines = vec![ratatui::text::Line::from(first_line_spans)];
-        if self.expanded
-            && has_comment
-            && let Some(comment) = &self.comment
-        {
-            for line in comment.lines() {
-                lines.push(ratatui::text::Line::from(vec![
-                    Span::raw(COMMENT_INDENT),
-                    Span::raw(line),
-                ]));
-            }
-        }
-
-        Text::from(lines)
-    }
-
     pub fn has_comment(&self) -> bool {
         self.comment
             .as_ref()
@@ -177,5 +134,64 @@ pub fn format_duration_compact(duration: Duration) -> String {
         format!("-{value}{unit}")
     } else {
         format!("{value}{unit}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_relative_duration_valid_inputs() {
+        let cases = [
+            ("0s", Duration::seconds(0)),
+            ("5s", Duration::seconds(5)),
+            ("59s", Duration::seconds(59)),
+            ("1m", Duration::minutes(1)),
+            ("10m", Duration::minutes(10)),
+            ("59m", Duration::minutes(59)),
+            ("1h", Duration::hours(1)),
+            ("12h", Duration::hours(12)),
+            ("23h", Duration::hours(23)),
+            ("1d", Duration::days(1)),
+            ("10d", Duration::days(10)),
+            ("-5s", Duration::seconds(-5)),
+            ("-2m", Duration::minutes(-2)),
+            ("-3h", Duration::hours(-3)),
+            ("-4d", Duration::days(-4)),
+            ("  5d  ", Duration::days(5)),
+            ("+7d", Duration::days(7)),
+            ("5 m", Duration::minutes(5)),
+        ];
+
+        for (input, expected) in cases {
+            let got = parse_relative_duration(input).expect("should parse");
+            assert_eq!(got, expected, "input={input}");
+        }
+    }
+
+    #[test]
+    fn parse_relative_duration_invalid_inputs() {
+        let cases = [
+            "", " ", "s", "d", "+", "-", "+d", "-h", "5", "d5", "5x", "5days", "--5d", "++5d",
+        ];
+
+        for input in cases {
+            assert!(parse_relative_duration(input).is_none(), "input={input}");
+        }
+    }
+
+    #[test]
+    fn duration_compact_format_round_trip_for_canonical_strings() {
+        let canonical = [
+            "0s", "1s", "59s", "1m", "2m", "59m", "1h", "2h", "23h", "1d", "2d", "10d", "-1s",
+            "-59s", "-1m", "-59m", "-1h", "-23h", "-1d", "-10d",
+        ];
+
+        for s in canonical {
+            let dur = parse_relative_duration(s).expect("parse canonical");
+            let back = format_duration_compact(dur);
+            assert_eq!(back, s, "round-trip failed for {s}");
+        }
     }
 }

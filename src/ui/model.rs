@@ -2,20 +2,38 @@ use chrono::{DateTime, Utc};
 
 use super::todo::Todo;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Section {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Section {
     Pending,
     Done,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PromptAction {
+    CustomDelay,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PromptOverlay {
+    pub(super) message: String,
+    pub(super) buffer: String,
+    pub(super) action: PromptAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum AppMode {
+    Normal,
+    Prompt(PromptOverlay),
+}
+
 #[derive(Debug, Clone)]
-pub struct TodoItems {
+pub(super) struct TodoItems {
     pub(super) pending: Vec<Todo>,
     pub(super) done: Vec<Todo>,
 }
 
 impl TodoItems {
-    pub fn new(mut items: Vec<Todo>) -> Self {
+    pub(super) fn new(mut items: Vec<Todo>) -> Self {
         items.sort_by_key(|todo| todo.due_date.unwrap_or(DateTime::<Utc>::MAX_UTC));
 
         let mut pending = Vec::new();
@@ -32,29 +50,29 @@ impl TodoItems {
         Self { pending, done }
     }
 
-    pub fn get(&self, section: Section, index: usize) -> Option<&Todo> {
+    pub(super) fn get(&self, section: Section, index: usize) -> Option<&Todo> {
         match section {
             Section::Pending => self.pending.get(index),
             Section::Done => self.done.get(index),
         }
     }
 
-    pub fn get_mut(&mut self, section: Section, index: usize) -> Option<&mut Todo> {
+    pub(super) fn get_mut(&mut self, section: Section, index: usize) -> Option<&mut Todo> {
         match section {
             Section::Pending => self.pending.get_mut(index),
             Section::Done => self.done.get_mut(index),
         }
     }
 
-    pub fn pending_count(&self) -> usize {
+    pub(super) fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
-    pub fn done_count(&self) -> usize {
+    pub(super) fn done_count(&self) -> usize {
         self.done.len()
     }
 
-    pub fn toggle_done(&mut self, section: Section, index: usize) {
+    pub(super) fn toggle_done(&mut self, section: Section, index: usize) {
         match section {
             Section::Pending => {
                 if index < self.pending.len() {
@@ -76,7 +94,7 @@ impl TodoItems {
         }
     }
 
-    pub fn to_vec(&self) -> Vec<Todo> {
+    pub(super) fn to_vec(&self) -> Vec<Todo> {
         self.pending
             .iter()
             .chain(self.done.iter())
@@ -84,25 +102,25 @@ impl TodoItems {
             .collect()
     }
 
-    pub fn pending_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
+    pub(super) fn pending_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
         self.pending.iter().enumerate()
     }
 
-    pub fn done_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
+    pub(super) fn done_iter(&self) -> impl Iterator<Item = (usize, &Todo)> {
         self.done.iter().enumerate()
     }
 
-    pub fn pending_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
+    pub(super) fn pending_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
         self.pending_iter()
             .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
     }
 
-    pub fn done_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
+    pub(super) fn done_selected_indices(&self) -> impl Iterator<Item = usize> + '_ {
         self.done_iter()
             .filter_map(|(i, item)| if item.selected { Some(i) } else { None })
     }
 
-    pub fn push(&mut self, item: Todo) {
+    pub(super) fn push(&mut self, item: Todo) {
         if item.done {
             self.done.push(item);
         } else {
@@ -112,14 +130,14 @@ impl TodoItems {
 }
 
 #[derive(Debug, Clone)]
-pub struct UiState {
-    pub current_section: Section,
-    pub pending_index: usize,
-    pub done_index: usize,
+pub(super) struct UiState {
+    pub(super) current_section: Section,
+    pub(super) pending_index: usize,
+    pub(super) done_index: usize,
 }
 
 impl UiState {
-    pub fn new(pending_count: usize) -> Self {
+    pub(super) fn new(pending_count: usize) -> Self {
         let current_section = if pending_count > 0 {
             Section::Pending
         } else {
@@ -133,11 +151,11 @@ impl UiState {
         }
     }
 
-    pub fn select_next(&mut self, pending_count: usize, done_count: usize) {
+    pub(super) fn select_next(&mut self, pending_count: usize, done_count: usize) {
         self.navigate(true, pending_count, done_count);
     }
 
-    pub fn select_previous(&mut self, pending_count: usize, done_count: usize) {
+    pub(super) fn select_previous(&mut self, pending_count: usize, done_count: usize) {
         self.navigate(false, pending_count, done_count);
     }
 
@@ -184,18 +202,21 @@ impl UiState {
         }
     }
 
-    pub fn current_index(&self) -> usize {
+    pub(super) fn current_index(&self) -> usize {
         match self.current_section {
             Section::Pending => self.pending_index,
             Section::Done => self.done_index,
         }
     }
 
-    pub fn get_cursored_item_mut<'a>(&self, items: &'a mut TodoItems) -> Option<&'a mut Todo> {
+    pub(super) fn get_cursored_item_mut<'a>(
+        &self,
+        items: &'a mut TodoItems,
+    ) -> Option<&'a mut Todo> {
         items.get_mut(self.current_section, self.current_index())
     }
 
-    pub fn adjust_indices(&mut self, pending_count: usize, done_count: usize) {
+    pub(super) fn adjust_indices(&mut self, pending_count: usize, done_count: usize) {
         if pending_count == 0 {
             self.pending_index = 0;
             if self.current_section == Section::Pending && done_count > 0 {
@@ -214,6 +235,29 @@ impl UiState {
             }
         } else if self.done_index >= done_count {
             self.done_index = done_count - 1;
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AppModel {
+    pub(super) exit: bool,
+    pub(super) sync_on_exit: bool,
+    pub(super) items: TodoItems,
+    pub(super) ui_state: UiState,
+    pub(super) mode: AppMode,
+}
+
+impl AppModel {
+    pub(super) fn new(items: Vec<Todo>) -> Self {
+        let items = TodoItems::new(items);
+        let ui_state = UiState::new(items.pending_count());
+        Self {
+            exit: false,
+            sync_on_exit: false,
+            items,
+            ui_state,
+            mode: AppMode::Normal,
         }
     }
 }
