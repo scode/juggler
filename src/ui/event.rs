@@ -7,11 +7,7 @@ use crate::error::Result;
 use super::state::Section;
 use super::todo::{Todo, parse_relative_duration};
 use super::widgets::{AppMode, PromptAction, PromptOverlay};
-use super::{
-    App, KEY_CREATE, KEY_CUSTOM_DELAY, KEY_EDIT, KEY_NEXT_ITEM, KEY_POSTPONE_WEEK,
-    KEY_PREPONE_WEEK, KEY_PREVIOUS_ITEM, KEY_QUIT, KEY_QUIT_WITH_SYNC, KEY_SNOOZE_DAY,
-    KEY_TOGGLE_DONE, KEY_TOGGLE_EXPAND, KEY_TOGGLE_SELECT, KEY_UNSNOOZE_DAY,
-};
+use super::{Action, App, action_for_key, key_for_action};
 
 fn sorted_indices<I: Iterator<Item = usize>>(iter: I) -> Vec<usize> {
     let mut v: Vec<usize> = iter.collect();
@@ -68,44 +64,51 @@ impl App {
         key_event: KeyEvent,
         terminal: &mut DefaultTerminal,
     ) -> Result<()> {
-        if (key_event.code == KEY_EDIT || key_event.code == KEY_CREATE)
-            && self.editor.needs_terminal_restoration()
-        {
+        let Some(action) = action_for_key(key_event.code) else {
+            return Ok(());
+        };
+
+        let edit_key = key_for_action(Action::Edit);
+        let create_key = key_for_action(Action::Create);
+        let is_edit_or_create = key_event.code == edit_key || key_event.code == create_key;
+
+        if is_edit_or_create && self.editor.needs_terminal_restoration() {
             ratatui::restore();
-            if key_event.code == KEY_EDIT {
+            if key_event.code == edit_key {
                 self.edit_item();
             } else {
                 self.create_new_item();
             }
             *terminal = ratatui::init();
-        } else if key_event.code == KEY_EDIT {
-            self.edit_item();
-        } else if key_event.code == KEY_CREATE {
-            self.create_new_item();
-        } else if key_event.code == KEY_CUSTOM_DELAY {
-            self.handle_custom_delay();
         } else {
-            self.handle_key_event_internal(key_event);
+            self.handle_action_internal(action);
         }
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn handle_key_event_internal(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KEY_QUIT => self.exit(),
-            KEY_QUIT_WITH_SYNC => self.exit_with_sync(),
-            KEY_NEXT_ITEM => self.select_next_internal(),
-            KEY_PREVIOUS_ITEM => self.select_previous_internal(),
-            KEY_TOGGLE_EXPAND => self.toggle_cursored_expanded(),
-            KEY_TOGGLE_DONE => self.toggle_done(),
-            KEY_EDIT => self.edit_item(),
-            KEY_TOGGLE_SELECT => self.toggle_select(),
-            KEY_SNOOZE_DAY => self.snooze_day(),
-            KEY_UNSNOOZE_DAY => self.unsnooze_day(),
-            KEY_POSTPONE_WEEK => self.snooze_week(),
-            KEY_PREPONE_WEEK => self.unsnooze_week(),
-            KEY_CREATE => self.create_new_item(),
-            _ => {}
+        if let Some(action) = action_for_key(key_event.code) {
+            self.handle_action_internal(action);
+        }
+    }
+
+    fn handle_action_internal(&mut self, action: Action) {
+        match action {
+            Action::Quit => self.exit(),
+            Action::QuitWithSync => self.exit_with_sync(),
+            Action::NextItem => self.select_next_internal(),
+            Action::PreviousItem => self.select_previous_internal(),
+            Action::ToggleExpand => self.toggle_cursored_expanded(),
+            Action::ToggleDone => self.toggle_done(),
+            Action::Edit => self.edit_item(),
+            Action::ToggleSelect => self.toggle_select(),
+            Action::SnoozeDay => self.snooze_day(),
+            Action::UnsnoozeDay => self.unsnooze_day(),
+            Action::PostponeWeek => self.snooze_week(),
+            Action::PreponeWeek => self.unsnooze_week(),
+            Action::Create => self.create_new_item(),
+            Action::CustomDelay => self.handle_custom_delay(),
         }
     }
 
