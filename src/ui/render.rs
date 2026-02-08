@@ -10,7 +10,7 @@ use crate::config::COMMENT_INDENT;
 
 use super::state::Section;
 use super::widgets::{AppMode, PromptWidget};
-use super::{App, HELP_TEXT};
+use super::{App, help_text};
 
 impl App {
     pub(super) fn render_pending_section(&self) -> List<'_> {
@@ -50,7 +50,7 @@ impl App {
             }
             AppMode::Normal => {
                 let help_widget =
-                    Paragraph::new(HELP_TEXT).block(Block::default().borders(Borders::TOP));
+                    Paragraph::new(help_text()).block(Block::default().borders(Borders::TOP));
                 frame.render_widget(help_widget, area);
             }
         }

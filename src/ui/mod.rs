@@ -1,17 +1,18 @@
 mod editor;
 mod event;
+mod keymap;
 mod render;
 mod state;
 mod todo;
 mod widgets;
 
-use crossterm::event::KeyCode;
 use ratatui::DefaultTerminal;
 
 use crate::error::Result;
 use crate::time::{SharedClock, system_clock};
 
 pub use editor::{ExternalEditor, TodoEditor};
+use keymap::{Action, action_for_key, help_text, key_for_action};
 pub use todo::Todo;
 
 #[cfg(test)]
@@ -21,23 +22,6 @@ pub use editor::{MockEditor, NoOpEditor};
 
 use state::{TodoItems, UiState};
 use widgets::AppMode;
-
-pub const HELP_TEXT: &str = "o-open, j/k-nav, x-select, e-done, E-edit, c-new, s:+1d, S:-1d, p:+7d, P:-7d, t-custom, q-quit, Q-quit+sync. Ops affect selected; if none, the cursored item.";
-
-pub const KEY_QUIT: KeyCode = KeyCode::Char('q');
-pub const KEY_QUIT_WITH_SYNC: KeyCode = KeyCode::Char('Q');
-pub const KEY_TOGGLE_EXPAND: KeyCode = KeyCode::Char('o');
-pub const KEY_NEXT_ITEM: KeyCode = KeyCode::Char('j');
-pub const KEY_PREVIOUS_ITEM: KeyCode = KeyCode::Char('k');
-pub const KEY_TOGGLE_DONE: KeyCode = KeyCode::Char('e');
-pub const KEY_EDIT: KeyCode = KeyCode::Char('E');
-pub const KEY_TOGGLE_SELECT: KeyCode = KeyCode::Char('x');
-pub const KEY_SNOOZE_DAY: KeyCode = KeyCode::Char('s');
-pub const KEY_UNSNOOZE_DAY: KeyCode = KeyCode::Char('S');
-pub const KEY_POSTPONE_WEEK: KeyCode = KeyCode::Char('p');
-pub const KEY_PREPONE_WEEK: KeyCode = KeyCode::Char('P');
-pub const KEY_CREATE: KeyCode = KeyCode::Char('c');
-pub const KEY_CUSTOM_DELAY: KeyCode = KeyCode::Char('t');
 
 pub struct App {
     exit: bool,
@@ -110,7 +94,7 @@ impl App {
 mod tests {
     use super::*;
     use chrono::{Duration, Utc};
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{
         Terminal,
         backend::TestBackend,
@@ -194,9 +178,15 @@ mod tests {
     fn toggle_cursored_expanded_via_key_event() {
         let items = vec![TodoBuilder::new("a").comment("comment").build()];
         let mut app = App::new(items, Box::new(NoOpEditor));
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleExpand),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].expanded);
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_EXPAND, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleExpand),
+            KeyModifiers::NONE,
+        ));
         assert!(!get_all_items(&app)[0].expanded);
     }
 
@@ -208,7 +198,10 @@ mod tests {
         assert!(!app.exit);
         assert!(!app.should_sync_on_exit());
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_QUIT_WITH_SYNC, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::QuitWithSync),
+            KeyModifiers::NONE,
+        ));
 
         assert!(app.exit);
         assert!(app.should_sync_on_exit());
@@ -222,7 +215,10 @@ mod tests {
         assert!(!app.exit);
         assert!(!app.should_sync_on_exit());
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_QUIT, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::Quit),
+            KeyModifiers::NONE,
+        ));
 
         assert!(app.exit);
         assert!(!app.should_sync_on_exit());
@@ -308,7 +304,10 @@ mod tests {
             "▶ [ ] first"
         );
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleSelect),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].selected);
         assert_eq!(
             text_to_string(&app.display_text_internal(Section::Pending, 0)),
@@ -316,7 +315,10 @@ mod tests {
         );
 
         app.select_next_internal();
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_SELECT, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleSelect),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[1].selected);
         assert_eq!(
             text_to_string(&app.display_text_internal(Section::Pending, 1)),
@@ -343,7 +345,8 @@ mod tests {
 
     #[test]
     fn draw_displays_help_text() {
-        let width = (HELP_TEXT.len() as u16).saturating_add(2);
+        let help = help_text();
+        let width = (help.len() as u16).saturating_add(2);
         let backend = TestBackend::new(width, 10);
         let mut terminal = Terminal::new(backend).unwrap();
 
@@ -357,7 +360,7 @@ mod tests {
             .map(|x| buf[(x, bottom_y)].symbol())
             .collect();
 
-        assert_eq!(line.trim_end(), HELP_TEXT);
+        assert_eq!(line.trim_end(), help);
     }
 
     #[test]
@@ -368,11 +371,17 @@ mod tests {
         ];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleDone),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].done);
         assert_eq!(app.items.pending_count(), 0);
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleDone),
+            KeyModifiers::NONE,
+        ));
         assert!(!get_all_items(&app)[0].done);
         assert_eq!(app.items.pending_count(), 1);
     }
@@ -387,7 +396,10 @@ mod tests {
         let mut app = App::new(items, Box::new(NoOpEditor));
         app.select_next_internal();
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleDone),
+            KeyModifiers::NONE,
+        ));
 
         let final_items = get_all_items(&app);
         let task1 = final_items.iter().find(|t| t.title == "task 1").unwrap();
@@ -429,7 +441,10 @@ mod tests {
         let mut app = App::new(items, Box::new(NoOpEditor));
         app.select_next_internal();
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_TOGGLE_DONE, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::ToggleDone),
+            KeyModifiers::NONE,
+        ));
 
         assert!(!get_all_items(&app)[0].done);
         assert!(get_all_items(&app)[1].done);
@@ -450,28 +465,40 @@ mod tests {
         let base = Utc::now();
         let mut app = App::new_with_clock(items, Box::new(NoOpEditor), fixed_clock(base));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
         let due1 = get_all_items(&app)[0]
             .due_date
             .expect("due set after snooze day");
         assert_eq!(due1, base + Duration::days(1));
 
         let prev = due1;
-        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PostponeWeek),
+            KeyModifiers::NONE,
+        ));
         let due2 = get_all_items(&app)[0]
             .due_date
             .expect("due set after postpone week");
         assert_eq!(due2, prev + Duration::days(7));
 
         let prev2 = due2;
-        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::UnsnoozeDay),
+            KeyModifiers::NONE,
+        ));
         let due3 = get_all_items(&app)[0]
             .due_date
             .expect("due set after unsnooze day");
         assert_eq!(due3, prev2 - Duration::days(1));
 
         let prev3 = due3;
-        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PreponeWeek),
+            KeyModifiers::NONE,
+        ));
         let due4 = get_all_items(&app)[0]
             .due_date
             .expect("due set after prepone week");
@@ -493,7 +520,10 @@ mod tests {
         }];
         let mut app = App::new_with_clock(items, Box::new(NoOpEditor), fixed_clock(base));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
 
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
 
@@ -518,7 +548,10 @@ mod tests {
         }];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
 
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected_due_date = future_date + Duration::days(1);
@@ -543,7 +576,10 @@ mod tests {
         let base = Utc::now();
         let mut app =
             App::new_with_clock(app.items.to_vec(), Box::new(NoOpEditor), fixed_clock(base));
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base + Duration::days(1);
         assert_eq!(new_due_date, expected);
@@ -565,7 +601,10 @@ mod tests {
         let base = Utc::now();
         let mut app =
             App::new_with_clock(app.items.to_vec(), Box::new(NoOpEditor), fixed_clock(base));
-        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PostponeWeek),
+            KeyModifiers::NONE,
+        ));
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base + Duration::days(7);
         assert_eq!(new_due_date, expected);
@@ -587,7 +626,10 @@ mod tests {
         let base = Utc::now();
         let mut app =
             App::new_with_clock(app.items.to_vec(), Box::new(NoOpEditor), fixed_clock(base));
-        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PreponeWeek),
+            KeyModifiers::NONE,
+        ));
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         let expected = base - Duration::days(7);
         assert_eq!(new_due_date, expected);
@@ -607,7 +649,10 @@ mod tests {
         }];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PostponeWeek),
+            KeyModifiers::NONE,
+        ));
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         assert_eq!(new_due_date, future_date + Duration::days(7));
     }
@@ -626,7 +671,10 @@ mod tests {
         }];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PreponeWeek),
+            KeyModifiers::NONE,
+        ));
         let new_due_date = get_all_items(&app)[0].due_date.unwrap();
         assert_eq!(new_due_date, future_date - Duration::days(7));
     }
@@ -679,7 +727,10 @@ mod tests {
 
         let mut app =
             App::new_with_clock(app.items.to_vec(), Box::new(NoOpEditor), fixed_clock(base));
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
 
         let items_after_snooze = get_all_items(&app);
         let overdue = items_after_snooze
@@ -703,7 +754,10 @@ mod tests {
         assert_eq!(d2_s, future_date + Duration::days(1));
         assert_eq!(d3_s, base + Duration::days(1));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::UnsnoozeDay),
+            KeyModifiers::NONE,
+        ));
         let items_after_unsnooze = get_all_items(&app);
         let overdue = items_after_unsnooze
             .iter()
@@ -725,7 +779,10 @@ mod tests {
         assert_eq!(d2_uns, d2_s - Duration::days(1));
         assert_eq!(d3_uns, d3_s - Duration::days(1));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PostponeWeek),
+            KeyModifiers::NONE,
+        ));
         let items_after_postpone = get_all_items(&app);
         let overdue = items_after_postpone
             .iter()
@@ -747,7 +804,10 @@ mod tests {
         assert_eq!(d2_p, d2_uns + Duration::days(7));
         assert_eq!(d3_p, d3_uns + Duration::days(7));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PreponeWeek),
+            KeyModifiers::NONE,
+        ));
         let items_after_prepone = get_all_items(&app);
         let overdue = items_after_prepone
             .iter()
@@ -812,22 +872,34 @@ mod tests {
         ];
         let mut app = App::new(items, Box::new(NoOpEditor));
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_SNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::SnoozeDay),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].selected);
         assert!(get_all_items(&app)[1].selected);
         assert!(!get_all_items(&app)[2].selected);
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_UNSNOOZE_DAY, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::UnsnoozeDay),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].selected);
         assert!(get_all_items(&app)[1].selected);
         assert!(!get_all_items(&app)[2].selected);
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_POSTPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PostponeWeek),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].selected);
         assert!(get_all_items(&app)[1].selected);
         assert!(!get_all_items(&app)[2].selected);
 
-        app.handle_key_event_internal(KeyEvent::new(KEY_PREPONE_WEEK, KeyModifiers::NONE));
+        app.handle_key_event_internal(KeyEvent::new(
+            key_for_action(Action::PreponeWeek),
+            KeyModifiers::NONE,
+        ));
         assert!(get_all_items(&app)[0].selected);
         assert!(get_all_items(&app)[1].selected);
         assert!(!get_all_items(&app)[2].selected);
