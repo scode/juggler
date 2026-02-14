@@ -1,3 +1,12 @@
+//! Durable YAML storage for todos.
+//!
+//! This module maps between runtime `Todo` values and persisted `TodoItem`
+//! records, and loads/saves the TODO list from disk.
+//!
+//! Save paths use temporary files, atomic replacement, and timestamped archive
+//! copies of previous files. It also handles directory creation and Unix
+//! permission setup for the local data file.
+
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::{fs, io::Write};

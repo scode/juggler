@@ -1,3 +1,12 @@
+//! Pure UI state definitions.
+//!
+//! This module defines the data structures that represent the full TUI state:
+//! pending/done partitions, cursor location, selection markers, and prompt-mode
+//! overlays. It does not perform I/O, rendering, or side-effect execution.
+//!
+//! `TodoItems` and `UiState` hold the list partitions and cursor/focus indexes
+//! used by reducer and rendering code.
+
 use chrono::{DateTime, Utc};
 
 use super::todo::Todo;

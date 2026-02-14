@@ -1,3 +1,10 @@
+//! Canonical normal-mode key bindings.
+//!
+//! This module defines the binding table used to map keys to normal-mode
+//! actions and to build footer help text.
+//!
+//! Tests in this module validate binding uniqueness and action/key round-trips.
+
 use std::sync::LazyLock;
 
 use crossterm::event::KeyCode;

@@ -1,3 +1,11 @@
+//! Rendering-only widgets used by the TUI.
+//!
+//! This module contains small reusable widget primitives that do not own app
+//! state.
+//!
+//! `PromptWidget` is currently the focused component: it clears the target area
+//! and renders prompt text with width-aware truncation.
+
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 
 #[derive(Debug, Clone)]

@@ -1,17 +1,10 @@
 //! Credential storage utilities for refresh tokens.
 //!
-//! This module defines a `CredentialStore` trait and provides two implementations:
-//! - `KeyringCredentialStore`: uses the OS keychain via the `keyring` crate
-//! - `InMemoryCredentialStore`: a simple, thread-safe in-memory store for tests
+//! This module defines `CredentialStore`, the interface used by login/logout
+//! and sync code to persist refresh tokens.
 //!
-//! Platform behavior for the keyring-backed implementation:
-//! - macOS/iOS: Uses the system Keychain
-//! - Windows: Uses the Windows Credential Manager
-//! - Linux/*nix: Uses the DBus Secret Service (synchronous API)
-//!
-//! Notes:
-//! - Service and account names must be non-empty (macOS treats empty as wildcard).
-//! - These identifiers should remain stable across app versions to allow retrieval.
+//! `KeyringCredentialStore` uses the platform keychain through the `keyring`
+//! crate, and `InMemoryCredentialStore` is used in tests.
 
 use keyring::Entry;
 use log::debug;

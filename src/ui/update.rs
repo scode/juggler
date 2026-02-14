@@ -1,3 +1,13 @@
+//! Reducer for TUI state transitions.
+//!
+//! This module contains the state transition logic for interactive behavior.
+//! Given the current `AppModel`, an action, and the current time, it computes
+//! the next state and optionally requests a single side effect.
+//!
+//! Reducer actions cover navigation, completion toggles, due-date adjustments,
+//! selection semantics, and prompt input handling. External work such as editor
+//! launch is represented as `SideEffect` data, not executed inline.
+
 use chrono::{DateTime, Duration, Utc};
 
 use super::keymap::Action as NormalAction;

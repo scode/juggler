@@ -1,3 +1,11 @@
+//! Application-wide error types and result alias.
+//!
+//! `JugglerError` collects failures from I/O, serialization, HTTP, OAuth,
+//! Google Tasks operations, and credential storage into one enum.
+//!
+//! Modules return the shared `Result<T>` alias so command handlers and runtime
+//! code can propagate errors through a consistent type.
+
 use std::io;
 
 #[derive(Debug, thiserror::Error)]

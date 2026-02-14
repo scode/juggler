@@ -1,3 +1,11 @@
+//! Input translation layer for terminal events.
+//!
+//! This module reads `crossterm` input events and maps key presses to reducer
+//! actions based on the current UI mode.
+//!
+//! Normal mode uses bindings from `keymap`; prompt mode handles text entry and
+//! prompt control keys.
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::error::Result;
