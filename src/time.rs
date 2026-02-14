@@ -1,14 +1,10 @@
-/*! A small, mockable time module.
-
-This module provides a `Clock` trait to abstract "current time" lookups so the
-rest of the application can avoid calling `Utc::now()` directly. That makes
-time-sensitive logic deterministic and easy to test.
-
-Types:
-- `Clock`: trait with a single `now()` method returning `DateTime<Utc>`
-- `SystemClock`: production implementation that returns the real current time
-- `FixedClock`: test implementation that returns a controllable, fixed time
-*/
+//! Shared time abstraction used across runtime code and tests.
+//!
+//! `Clock` provides an injectable source of current UTC time. `SystemClock`
+//! serves production code, and `FixedClock` supports deterministic tests.
+//!
+//! Modules that depend on time accept shared clock trait objects instead of
+//! calling `Utc::now()` directly.
 
 #[cfg(test)]
 use chrono::Duration;

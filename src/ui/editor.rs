@@ -1,3 +1,15 @@
+//! External editor integration for todo edit/create flows.
+//!
+//! This module provides the side-effect adapter that bridges pure UI state
+//! transitions with user editing in an external program. It is invoked when the
+//! reducer emits edit/create requests.
+//!
+//! The implementation resolves `$VISUAL`/`$EDITOR`, parses optional command-line
+//! arguments safely, writes a temporary YAML payload, and then reads the edited
+//! content back into a validated `Todo` value.
+//!
+//! The `TodoEditor` trait supports runtime and test implementations.
+
 use std::{env, fs, io::Write, process::Command};
 
 use tempfile::NamedTempFile;

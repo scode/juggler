@@ -1,3 +1,11 @@
+//! Shared configuration constants and path helpers.
+//!
+//! This module defines cross-cutting constants used by the CLI, TUI, OAuth
+//! flow, credential storage, and Google Tasks sync.
+//!
+//! It also provides helpers for resolving juggler's data directory and TODO
+//! file path under the user's home directory.
+
 pub const CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
 pub const CREDENTIAL_KEYRING_SERVICE: &str = "juggler";
 

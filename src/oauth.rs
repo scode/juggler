@@ -1,3 +1,11 @@
+//! OAuth support for Google Tasks integration.
+//!
+//! This module implements the PKCE browser login flow, including local callback
+//! handling and `state` validation before code exchange.
+//!
+//! It also provides `GoogleOAuthClient`, which refreshes access tokens from a
+//! stored refresh token and caches token state for API calls during sync.
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;

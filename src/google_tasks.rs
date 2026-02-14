@@ -1,3 +1,12 @@
+//! One-way sync engine from local todos to Google Tasks.
+//!
+//! This module resolves the configured Google task list, reads existing remote
+//! tasks, computes desired remote values from local todos, and applies
+//! create/update/delete operations.
+//!
+//! It manages field mapping and `google_task_id` tracking, and supports dry-run
+//! execution that reports planned operations without applying writes.
+
 use log::info;
 
 use crate::config::{GOOGLE_TASK_TITLE_PREFIX, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};

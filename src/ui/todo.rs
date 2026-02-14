@@ -1,3 +1,12 @@
+//! Runtime todo domain model shared by UI and sync flows.
+//!
+//! This module defines the in-memory task representation used during interactive
+//! editing and synchronization. It extends persisted fields with UI-only state
+//! (expanded/selected) so interface concerns do not pollute storage schema.
+//!
+//! It also parses compact relative-delay expressions (for example `5d`, `-2h`)
+//! used by prompt-driven scheduling, and contains due-date formatting helpers.
+
 use chrono::{DateTime, Duration, Utc};
 use ratatui::style::Color;
 

@@ -1,3 +1,12 @@
+//! Stateless rendering layer for the TUI.
+//!
+//! This module turns immutable application state into terminal widgets using
+//! ratatui. It owns layout composition, section framing, list item styling, and
+//! footer rendering, but never mutates model state.
+//!
+//! Rendering is structured around the pending/done partition and cursor/focus
+//! state in `AppModel`, with prompt mode rendered in the footer area.
+
 use chrono::{DateTime, Utc};
 use ratatui::{
     Frame,

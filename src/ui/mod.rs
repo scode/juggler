@@ -1,3 +1,11 @@
+//! TUI runtime orchestration.
+//!
+//! This module wires the UI submodules into the main event loop and exposes
+//! `App` as the runtime entry point for interactive mode.
+//!
+//! The loop renders state, reads input, maps input to actions, runs the
+//! reducer, and executes requested side effects such as external editing.
+
 mod editor;
 mod event;
 mod keymap;
