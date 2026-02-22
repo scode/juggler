@@ -205,6 +205,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }
     }

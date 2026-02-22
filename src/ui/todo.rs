@@ -21,6 +21,7 @@ pub struct Todo {
     pub done: bool,
     pub selected: bool,
     pub due_date: Option<DateTime<Utc>>,
+    pub todo_id: Option<String>,
     pub google_task_id: Option<String>,
 }
 
@@ -82,6 +83,7 @@ impl From<TodoItem> for Todo {
             done: item.done,
             selected: false,
             due_date: item.due_date,
+            todo_id: item.todo_id,
             google_task_id: item.google_task_id,
         }
     }

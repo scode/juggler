@@ -1,16 +1,16 @@
 # juggler
 
-A TODO juggler TUI application built with [Ratatui] that displays and manages TODO items from YAML files. Features a terminal user interface for managing tasks with due dates, comments, and Google Tasks synchronization.
+A TODO juggler TUI application built with [Ratatui] that displays and manages TODO items from TOML files. Features a terminal user interface for managing tasks with due dates, comments, and Google Tasks synchronization.
 
 [Ratatui]: https://ratatui.rs
 
 ## Features
 
 - **Terminal User Interface**: Navigate and manage TODOs with keyboard shortcuts
-- **YAML Storage**: TODOs stored in human-readable YAML format with comments and due dates
+- **TOML Storage**: TODOs stored in human-readable TOML format with metadata, stable IDs, comments, and due dates
 - **Due Date Support**: Automatic sorting with overdue items highlighted
 - **External Editor Integration**: Edit TODOs in your preferred editor (via `$VISUAL`/`$EDITOR`)
-- **Google Tasks Sync**: One-way synchronization to Google Tasks (local YAML is authoritative)
+- **Google Tasks Sync**: One-way synchronization to Google Tasks (local TOML is authoritative)
 - **Completion Tracking**: Mark items as done/undone
 - **Snooze/Prepone**: Quickly adjust due dates by ±1 day or ±7 days, plus custom delays
 
@@ -96,7 +96,7 @@ juggler sync google-tasks --help
 
 ## Google Tasks Synchronization
 
-Juggler can synchronize your TODOs to Google Tasks, pushing your local YAML todos to Google's web/mobile interfaces. The local YAML file is the authoritative source - changes are pushed one-way to Google Tasks.
+Juggler can synchronize your TODOs to Google Tasks, pushing your local TOML todos to Google's web/mobile interfaces. The local TOML file is the authoritative source - changes are pushed one-way to Google Tasks.
 
 ### Prerequisites
 
@@ -199,7 +199,7 @@ export RUST_LOG=info
 The sync process pushes your local TODOs to Google Tasks (one-way sync):
 
 1. **Creates new tasks** in Google Tasks for local TODOs without `google_task_id`
-2. **Updates existing tasks** when title, notes, completion status, or due date changes in the local YAML
+2. **Updates existing tasks** when title, notes, completion status, or due date changes in the local TOML
 3. **Deletes orphaned tasks** in Google Tasks only when they carry juggler's ownership marker in notes
 4. **Maps task properties** from local to Google Tasks:
    - TODO `title` → Google Task `title`
@@ -209,7 +209,7 @@ The sync process pushes your local TODOs to Google Tasks (one-way sync):
 
 After sync, each TODO item gets a `google_task_id` field linking it to the corresponding Google Task.
 
-**Important**: Changes made directly in Google Tasks will be **overwritten** on the next sync. Always edit your TODOs in the local YAML file or through the juggler TUI.
+**Important**: Changes made directly in Google Tasks will be **overwritten** on the next sync. Always edit your TODOs in the local TOML file or through the juggler TUI.
 
 ## Limitations
 
@@ -239,31 +239,36 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 - If you encounter persistent errors, please file an issue at the project repository
 
 **Tasks not syncing properly**
-- Check that your local TODOs.yaml file is valid YAML
+- Check that your local `TODOs.toml` file is valid TOML
 - Use `--dry-run` mode first to see what would happen:
   ```bash
   RUST_LOG=info juggler sync google-tasks --dry-run
   ```
-- Try removing `google_task_id` fields from your YAML to force re-creation of tasks
+- Try removing `google_task_id` fields from your TOML to force re-creation of tasks
 
 ## Data Format
 
-By default, TODOs are stored at `~/.juggler/TODOs.yaml`. Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.yaml`).
+By default, TODOs are stored at `~/.juggler/TODOs.toml`. Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.toml`).
 
-```yaml
-- title: "Buy groceries"
-  comment: |
-    - Milk
-    - Bread
-    - Eggs
-  done: false
-  due_date: "2025-01-07T09:00:00Z"  # ISO 8601 format
-  google_task_id: "task_abc123"     # Set after sync
-- title: "Completed task"
-  comment: null
-  done: true
-  due_date: null
-  google_task_id: "task_def456"
+If `TODOs.toml` is missing, juggler will read legacy `TODOs.yaml` for compatibility. Subsequent saves always write TOML and leave the legacy YAML file unchanged.
+
+```toml
+[metadata]
+format_version = 1
+juggler_edition = 1
+
+[todos.T1]
+title = "Buy groceries"
+comment = """- Milk
+- Bread
+- Eggs"""
+done = false
+due_date = "2025-01-07T09:00:00Z"  # ISO 8601 format
+google_task_id = "task_abc123"     # Set after sync
+
+[todos.T2]
+title = "Completed task"
+done = true
 ```
 
 ## License

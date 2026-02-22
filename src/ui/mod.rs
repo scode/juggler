@@ -164,6 +164,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }
     }
@@ -209,6 +210,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         };
         let mut app = App::new(vec![todo("original")], Box::new(MockEditor::new(updated)));
