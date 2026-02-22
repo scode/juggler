@@ -233,6 +233,23 @@ mod tests {
     }
 
     #[test]
+    fn edit_side_effect_ignores_empty_titles() {
+        let mut empty_title = todo(" ");
+        empty_title.comment = Some("ignored".to_string());
+        let mut app = App::new(
+            vec![todo("existing")],
+            Box::new(MockEditor::new(empty_title)),
+        );
+
+        app.dispatch_action_for_test(Action::Normal(NormalAction::Edit));
+
+        let items = app.items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "existing");
+        assert!(items[0].comment.is_none());
+    }
+
+    #[test]
     fn create_side_effect_round_trip_applies_editor_result() {
         let mut created = todo("new task");
         created.comment = Some("new comment".to_string());
