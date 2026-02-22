@@ -56,6 +56,13 @@ impl KeyringCredentialStore {
         )
         .map_err(|e| CredentialError::Backend(e.to_string()))
     }
+
+    fn map_delete_error(error: keyring::Error) -> Result<(), CredentialError> {
+        match error {
+            keyring::Error::NoEntry => Ok(()),
+            other => Err(CredentialError::Backend(other.to_string())),
+        }
+    }
 }
 
 impl CredentialStore for KeyringCredentialStore {
@@ -88,7 +95,10 @@ impl CredentialStore for KeyringCredentialStore {
             CREDENTIAL_KEYRING_SERVICE, CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS
         );
         let entry = self.make_entry()?;
-        Entry::delete_credential(&entry).map_err(|e| CredentialError::Backend(e.to_string()))
+        match Entry::delete_credential(&entry) {
+            Ok(()) => Ok(()),
+            Err(error) => Self::map_delete_error(error),
+        }
     }
 }
 
@@ -164,5 +174,19 @@ mod tests {
             store.get_refresh_token(),
             Err(CredentialError::NotFound)
         ));
+    }
+
+    #[test]
+    fn test_keyring_delete_no_entry_is_treated_as_success() {
+        assert!(KeyringCredentialStore::map_delete_error(keyring::Error::NoEntry).is_ok());
+    }
+
+    #[test]
+    fn test_keyring_delete_other_errors_are_preserved() {
+        let platform_error =
+            keyring::Error::PlatformFailure(Box::new(std::io::Error::other("backend failure")));
+        let err = KeyringCredentialStore::map_delete_error(platform_error)
+            .expect_err("non-no-entry errors should surface");
+        assert!(matches!(err, CredentialError::Backend(_)));
     }
 }

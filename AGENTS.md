@@ -24,6 +24,7 @@ Keep it opinionated and durable; do not use it as an architecture inventory.
 - When behavior changes are intentional and clear, update `SPEC.md` in the same change so the specification remains authoritative.
 - During code review, verify implementation and tests for `SPEC.md` compliance; call out any mismatches explicitly.
 - For Google Tasks sync, treat the notes ownership marker (`JUGGLER_META_OWNED_V1`) as the deletion authority; the `j:` title prefix is migration-only.
+- Keep logout behavior idempotent: deleting a missing refresh token should be treated as success.
 
 ## Release intent
 

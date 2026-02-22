@@ -18,7 +18,7 @@ use config::{
     CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE, GOOGLE_OAUTH_CLIENT_ID,
     get_todos_file_path,
 };
-use credential_storage::{CredentialStore, KeyringCredentialStore};
+use credential_storage::{CredentialError, CredentialStore, KeyringCredentialStore};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
 use oauth::run_oauth_flow;
 use store::{load_todos, store_todos};
@@ -136,6 +136,9 @@ async fn main() -> Result<()> {
         Some(Commands::Logout) => match cred_store.delete_refresh_token() {
             Ok(()) => {
                 println!("Logged out: refresh token removed from keychain.");
+            }
+            Err(CredentialError::NotFound) => {
+                println!("Logged out: no refresh token was stored.");
             }
             Err(e) => {
                 error!("Failed to delete refresh token from keychain: {e}");
