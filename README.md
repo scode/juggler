@@ -32,7 +32,7 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
    ```bash
    ./target/release/juggler sync google-tasks
    ```
-5. Optional: **Log out** by removing the stored refresh token:
+5. Optional: **Log out** by removing the stored refresh token (safe to run even if already logged out):
    ```bash
    ./target/release/juggler logout
    ```
@@ -86,6 +86,7 @@ juggler sync google-tasks --help
 - `juggler` - Launch interactive TUI mode
 - `juggler login` - Browser-based OAuth authentication
 - `juggler sync google-tasks` - Sync TODOs with Google Tasks
+- `juggler logout` - Remove the stored refresh token (idempotent if no token is stored)
 
 **Login options:**
 - `--port <PORT>`: Local callback port (default: 8080)

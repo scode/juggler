@@ -135,7 +135,4 @@ Why: trust depends on transparent failures and no silent data corruption/loss.
 
 ## 13) Known Divergences (Observed Current Behavior vs Likely Intent)
 
-These are intentionally documented here for product clarity; fixing them is separate work.
-
-1. Logout currently errors in some "already logged out" states.
-Reason this is likely a divergence: intended behavior is idempotent logout.
+No known divergences currently.
