@@ -10,7 +10,7 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 - **TOML Storage**: TODOs stored in human-readable TOML format with metadata, stable IDs, comments, and due dates
 - **Due Date Support**: Automatic sorting with overdue items highlighted
 - **External Editor Integration**: Edit TODOs in your preferred editor (via `$VISUAL`/`$EDITOR`)
-- **Google Tasks Sync**: One-way synchronization to Google Tasks (local TOML is authoritative)
+- **Google Tasks Sync (Bare Bones)**: Manual setup flow; see [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md)
 - **Completion Tracking**: Mark items as done/undone
 - **Snooze/Prepone**: Quickly adjust due dates by ±1 day or ±7 days, plus custom delays
 
@@ -21,21 +21,12 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
    cargo build --release
    ```
 
-2. **Create a "juggler" task list in [Google Tasks](https://tasks.google.com/)**
-
-3. **Authenticate with Google:**
+2. **Run the TUI:**
    ```bash
-   ./target/release/juggler login
+   ./target/release/juggler
    ```
 
-4. **Sync your TODOs:**
-   ```bash
-   ./target/release/juggler sync google-tasks
-   ```
-5. Optional: **Log out** by removing the stored refresh token (safe to run even if already logged out):
-   ```bash
-   ./target/release/juggler logout
-   ```
+3. Optional: **Google Tasks sync is currently very bare bones** and requires manual setup (including changing OAuth client values in code). See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Installation
 
@@ -94,157 +85,9 @@ juggler sync google-tasks --help
 **Sync options:**
 - `--dry-run`: Log actions without executing them (safe testing mode)
 
-## Google Tasks Synchronization
+## Google Tasks Sync
 
-Juggler can synchronize your TODOs to Google Tasks, pushing your local TOML todos to Google's web/mobile interfaces. The local TOML file is the authoritative source - changes are pushed one-way to Google Tasks.
-
-### Prerequisites
-
-1. **Google Account**: You need a Google account with access to Google Tasks
-2. **Juggler Task List**: Create a task list named "juggler" in Google Tasks
-
-### Quick Setup
-
-#### Create the "juggler" Task List
-
-1. Open [Google Tasks](https://tasks.google.com/)
-2. Create a new task list named exactly **"juggler"**
-3. This is where all your TODO items will be synchronized
-
-**That's it!** Now you can authenticate easily with `juggler login` (see below) or manually set up OAuth credentials.
-
-### Synchronizing TODOs
-
-Once you have your OAuth credentials, synchronize your TODOs with Google Tasks:
-
-#### Sync
-
-```bash
-# Sync your TODOs with Google Tasks (uses refresh token from your system keychain)
-juggler sync google-tasks
-```
-
-#### Using Access Token (Legacy)
-
-```bash
-# Legacy access token flow has been removed. Please use:
-juggler sync google-tasks
-```
-
-**Example:**
-```bash
-juggler sync google-tasks
-```
-
-#### Dry-Run Mode
-
-Test your sync operations without making actual changes:
-
-```bash
-# Dry-run mode
-RUST_LOG=info juggler sync google-tasks --dry-run
-```
-
-In dry-run mode, all API actions are logged but not executed. This allows you to:
-- Test your configuration safely
-- Preview what changes would be made
-- Debug sync issues without affecting your Google Tasks
-
-#### Logging Configuration
-
-Juggler uses Rust's standard logging infrastructure (`env_logger`). Configure logging via the `RUST_LOG` environment variable. If `RUST_LOG` is not set, the default level is `info`.
-
-**Basic (default) level:**
-```bash
-RUST_LOG=info juggler sync google-tasks
-```
-
-**Increase verbosity (debug):**
-```bash
-RUST_LOG=debug juggler sync google-tasks
-```
-
-**Silent mode (errors only):**
-```bash
-RUST_LOG=error juggler sync google-tasks
-```
-
-**Applies to all commands (TUI, login, sync):**
-```bash
-# TUI
-RUST_LOG=debug juggler
-
-# OAuth login
-RUST_LOG=debug juggler login
-```
-
-**Module filters (advanced):**
-```bash
-RUST_LOG=juggler=debug,reqwest=warn juggler sync google-tasks
-```
-
-**Persist in shell (optional):**
-```bash
-export RUST_LOG=info
-```
-
-**Log output includes:**
-- Sync start/completion messages
-- Task creation, updates, and deletions
-- Clear `[DRY RUN]` prefixes when using `--dry-run`
-- Error details for troubleshooting
-
-### How Synchronization Works
-
-The sync process pushes your local TODOs to Google Tasks (one-way sync):
-
-1. **Creates new tasks** in Google Tasks for local TODOs without `google_task_id`
-2. **Updates existing tasks** when title, notes, completion status, or due date changes in the local TOML
-3. **Deletes orphaned tasks** in Google Tasks only when they carry juggler's ownership marker in notes
-4. **Maps task properties** from local to Google Tasks:
-   - TODO `title` → Google Task `title`
-   - TODO `comment` → Google Task `notes` (plus juggler ownership marker metadata)
-   - TODO `done` → Google Task `status` (completed/needsAction)
-   - TODO `due_date` → Google Task `due`
-
-After sync, each TODO item gets a `google_task_id` field linking it to the corresponding Google Task.
-
-**Important**: Changes made directly in Google Tasks will be **overwritten** on the next sync. Always edit your TODOs in the local TOML file or through the juggler TUI.
-
-## Limitations
-
-- **Google Tasks due time precision**: The Google Tasks API stores `due` as a date-only field. The time component is discarded when setting or reading via the public API. The UI may display a time, but that precision is not exposed through the public API. See the official docs: https://developers.google.com/workspace/tasks/reference/rest/v1/tasks (field `due`).
-  - Impact in juggler during task syncing: We normalize outgoing due dates to midnight UTC (00:00:00Z) and compare by calendar day with a very small tolerance to avoid spurious updates.
-
-## Security Notes
-
-- **Never commit OAuth credentials** to version control
-- **Use refresh tokens** for persistent access (recommended approach)
-- **Access tokens expire** (typically 1 hour) but refresh tokens provide long-term access
-- **Storage**: Refresh tokens are stored securely in your system keychain via the keyring crate after running `juggler login`. To refresh or reset, run `juggler login` again.
-
-### Troubleshooting
-
-**"No 'juggler' task list found"**
-- Create a task list named exactly **"juggler"** in [Google Tasks](https://tasks.google.com/)
-- Make sure you're signed into the same Google account you used to get the token
-
-**"Invalid token" or authentication errors**
-- If you see authentication errors, run `juggler login` again to refresh the stored credentials. You can also revoke the app's access at https://myaccount.google.com/permissions and then run `juggler login` again.
-- Make sure you selected the `https://www.googleapis.com/auth/tasks` scope when getting your credentials
-- For refresh tokens, check that you copied the refresh token value (starts with `1//`)
-
-**"Error 401: invalid_client" or authentication errors during login**
-- This should not occur with the latest version as the OAuth client is properly configured
-- If you encounter persistent errors, please file an issue at the project repository
-
-**Tasks not syncing properly**
-- Check that your local `TODOs.toml` file is valid TOML
-- Use `--dry-run` mode first to see what would happen:
-  ```bash
-  RUST_LOG=info juggler sync google-tasks --dry-run
-  ```
-- Try removing `google_task_id` fields from your TOML to force re-creation of tasks
+Synchronization to Google Tasks is currently very bare bones and requires manual setup, including changing the OAuth client values in source code before building. See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Data Format
 
