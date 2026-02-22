@@ -9,13 +9,46 @@
 - PR titles must follow the same Conventional Commit header format.
 - CI enforces PR title format with `amannn/action-semantic-pull-request` in `.github/workflows/convention-commit-pr-title.yml`.
 
+## Changelog Setup
+
+`cargo dist` populates GitHub release notes by parsing a root changelog file (for example `CHANGELOG.md`). This repository uses `git-cliff` for changelog generation and keeps the configuration in `cliff.toml`.
+
+### Maintainer Setup (One-Time Per Machine)
+
+Install `git-cliff`:
+
+```bash
+brew install git-cliff
+# or
+cargo install git-cliff
+```
+
+### Repository Bootstrap (One-Time In Repository History)
+
+This setup has already been completed in this repository. It is not part of each release.
+
+1. Initialize the Keep a Changelog template:
+   ```bash
+   git-cliff --init keepachangelog
+   ```
+2. Commit `cliff.toml` (and any intended template edits) so all release runs use the same format.
+
 ## Release Process
 
-1. Edit `Cargo.toml` and bump `package.version` to the release version.
+1. Set the release version in `Cargo.toml` (`X.Y.Z`).
 2. Run `cargo update --workspace` to refresh `Cargo.lock` for the new workspace version.
-3. Run `cargo metadata --format-version 1 --locked > /dev/null` to confirm lockfile consistency without running tests.
-4. Submit a PR with these changes and merge it.
-5. Tag the merge commit as `vX.Y.Z` and push the tag.
-6. `cargo dist` handles the rest of the release workflow.
+3. Run `cargo metadata --format-version 1 --locked > /dev/null` to confirm lockfile consistency.
+4. Generate the changelog entry for this release before tagging:
+   ```bash
+   VERSION=X.Y.Z
+   git-cliff --tag "v$VERSION" -o CHANGELOG.md
+   ```
+5. Verify the release heading exists in `CHANGELOG.md`:
+   ```bash
+   rg -n "^## \\[$VERSION\\]" CHANGELOG.md
+   ```
+6. Submit and merge a PR that includes `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`.
+7. Tag the merge commit as `vX.Y.Z` and push the tag.
+8. `cargo dist` handles the rest of the release workflow and uses the matching changelog heading for the GitHub Release body.
 
 See [dist documentation](https://github.com/axodotdev/cargo-dist) for details.
