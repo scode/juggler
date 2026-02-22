@@ -48,6 +48,8 @@ pub const GOOGLE_TASKS_LIST_NAME: &str = "juggler";
 
 pub const GOOGLE_TASK_TITLE_PREFIX: &str = "j:";
 
+pub const GOOGLE_TASK_OWNERSHIP_MARKER: &str = "JUGGLER_META_OWNED_V1";
+
 pub const GOOGLE_TASKS_SCOPE: &str = "https://www.googleapis.com/auth/tasks";
 
 pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {

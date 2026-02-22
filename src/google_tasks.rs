@@ -8,14 +8,18 @@
 //! execution that reports planned operations without applying writes.
 
 use log::info;
+use std::collections::{HashMap, HashSet};
 
-use crate::config::{GOOGLE_TASK_TITLE_PREFIX, GOOGLE_TASKS_BASE_URL, GOOGLE_TASKS_LIST_NAME};
+use crate::config::{
+    GOOGLE_TASK_OWNERSHIP_MARKER, GOOGLE_TASK_TITLE_PREFIX, GOOGLE_TASKS_BASE_URL,
+    GOOGLE_TASKS_LIST_NAME,
+};
 use crate::error::{JugglerError, Result};
 use crate::ui::Todo;
 
 pub use crate::oauth::{GoogleOAuthClient, GoogleOAuthCredentials};
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct GoogleTask {
     id: Option<String>,
     title: String,
@@ -207,6 +211,32 @@ fn format_due_midnight_z(d: &Option<chrono::DateTime<chrono::Utc>>) -> Option<St
     })
 }
 
+fn notes_have_ownership_marker(notes: Option<&str>) -> bool {
+    notes
+        .map(|value| {
+            value
+                .lines()
+                .any(|line| line.trim() == GOOGLE_TASK_OWNERSHIP_MARKER)
+        })
+        .unwrap_or(false)
+}
+
+fn notes_with_ownership_marker(notes: Option<&str>) -> String {
+    let notes = notes.unwrap_or_default();
+    if notes_have_ownership_marker(Some(notes)) {
+        return notes.to_string();
+    }
+    if notes.is_empty() {
+        return GOOGLE_TASK_OWNERSHIP_MARKER.to_string();
+    }
+    format!("{notes}\n\n{GOOGLE_TASK_OWNERSHIP_MARKER}")
+}
+
+fn is_legacy_prefixed_unmarked_task(task: &GoogleTask) -> bool {
+    task.title.starts_with(GOOGLE_TASK_TITLE_PREFIX)
+        && !notes_have_ownership_marker(task.notes.as_deref())
+}
+
 struct DesiredTaskValues {
     title: String,
     notes: Option<String>,
@@ -217,7 +247,7 @@ struct DesiredTaskValues {
 fn desired_task_values(todo: &Todo) -> DesiredTaskValues {
     DesiredTaskValues {
         title: format!("{}{}", GOOGLE_TASK_TITLE_PREFIX, todo.title),
-        notes: todo.comment.clone(),
+        notes: Some(notes_with_ownership_marker(todo.comment.as_deref())),
         status: if todo.done {
             "completed"
         } else {
@@ -387,8 +417,76 @@ fn log_task_diffs(
     }
 }
 
+async fn migrate_legacy_ownership_markers(
+    existing_tasks: &[GoogleTask],
+    list_id: &str,
+    access_token: &str,
+    dry_run: bool,
+    base_url: &str,
+    client: &reqwest::Client,
+) -> Result<HashSet<String>> {
+    let mut migrated_ids = HashSet::new();
+
+    for task in existing_tasks {
+        let Some(task_id) = task.id.as_deref() else {
+            continue;
+        };
+        if !is_legacy_prefixed_unmarked_task(task) {
+            continue;
+        }
+
+        let migrated_task = GoogleTask {
+            id: Some(task_id.to_string()),
+            title: task.title.clone(),
+            notes: Some(notes_with_ownership_marker(task.notes.as_deref())),
+            status: task.status.clone(),
+            due: task.due.clone(),
+            updated: None,
+            completed: None,
+        };
+
+        info!(
+            "Migrating legacy ownership marker for task '{}' (ID: {})",
+            migrated_task.title, task_id
+        );
+
+        if dry_run {
+            info!(
+                "[DRY RUN] Would add ownership marker to task '{}'",
+                migrated_task.title
+            );
+        } else {
+            let update_url = format!("{base_url}/tasks/v1/lists/{list_id}/tasks/{task_id}");
+            check_api_response(
+                client
+                    .put(&update_url)
+                    .bearer_auth(access_token)
+                    .json(&migrated_task)
+                    .send()
+                    .await?,
+            )
+            .await?;
+        }
+
+        migrated_ids.insert(task_id.to_string());
+    }
+
+    Ok(migrated_ids)
+}
+
+fn apply_migrated_markers_to_map(
+    google_task_map: &mut HashMap<String, GoogleTask>,
+    migrated_ids: &HashSet<String>,
+) {
+    for task_id in migrated_ids {
+        if let Some(task) = google_task_map.get_mut(task_id) {
+            task.notes = Some(notes_with_ownership_marker(task.notes.as_deref()));
+        }
+    }
+}
+
 async fn delete_orphan_tasks(
-    google_task_map: std::collections::HashMap<String, GoogleTask>,
+    google_task_map: HashMap<String, GoogleTask>,
     list_id: &str,
     access_token: &str,
     dry_run: bool,
@@ -396,6 +494,14 @@ async fn delete_orphan_tasks(
     client: &reqwest::Client,
 ) -> Result<()> {
     for (task_id, google_task) in google_task_map {
+        if !notes_have_ownership_marker(google_task.notes.as_deref()) {
+            info!(
+                "Skipping orphaned task without ownership marker: '{}' (ID: {})",
+                google_task.title, task_id
+            );
+            continue;
+        }
+
         info!(
             "Deleting orphaned Google Task: '{}' (ID: {})",
             google_task.title, task_id
@@ -442,11 +548,28 @@ async fn sync_to_tasks_with_base_url(
     // Get all existing tasks from the sync list (across all pages)
     let existing_tasks = fetch_all_tasks(client, &juggler_list.id, access_token, base_url).await?;
 
+    let migrated_task_ids = migrate_legacy_ownership_markers(
+        &existing_tasks,
+        &juggler_list.id,
+        access_token,
+        dry_run,
+        base_url,
+        client,
+    )
+    .await?;
+    if !migrated_task_ids.is_empty() {
+        info!(
+            "Legacy ownership migration processed {} task(s).",
+            migrated_task_ids.len()
+        );
+    }
+
     // Create a map of Google Task IDs to Google Tasks for quick lookup
-    let mut google_task_map: std::collections::HashMap<String, GoogleTask> = existing_tasks
+    let mut google_task_map: HashMap<String, GoogleTask> = existing_tasks
         .into_iter()
         .filter_map(|task| task.id.clone().map(|id| (id, task)))
         .collect();
+    apply_migrated_markers_to_map(&mut google_task_map, &migrated_task_ids);
 
     // Process each todo
     for todo in todos.iter_mut() {
@@ -527,16 +650,21 @@ async fn sync_to_tasks_with_base_url(
         }
     }
 
-    // Delete any remaining Google Tasks that don't have corresponding todos
-    delete_orphan_tasks(
-        google_task_map,
-        &juggler_list.id,
-        access_token,
-        dry_run,
-        base_url,
-        client,
-    )
-    .await?;
+    // Skip deletion in migration runs so users can explicitly run one sync to
+    // upgrade ownership metadata before any orphan cleanup occurs.
+    if migrated_task_ids.is_empty() {
+        delete_orphan_tasks(
+            google_task_map,
+            &juggler_list.id,
+            access_token,
+            dry_run,
+            base_url,
+            client,
+        )
+        .await?;
+    } else {
+        info!("Skipping orphan deletion because ownership migration ran in this sync.");
+    }
 
     if dry_run {
         info!("DRY RUN complete - no changes were made");
@@ -559,6 +687,15 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use wiremock::matchers::{bearer_token, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn request_count(requests: &[wiremock::Request], method: &str, request_path: &str) -> usize {
+        requests
+            .iter()
+            .filter(|request| {
+                request.method.as_str() == method && request.url.path() == request_path
+            })
+            .count()
+    }
 
     #[test]
     fn test_due_dates_equivalent_date_only_and_tolerance() {
@@ -592,6 +729,54 @@ mod tests {
         let google_due_far = Some("2025-08-20T00:00:00Z".to_string());
         let todo_due_far = Some(chrono::Utc.with_ymd_and_hms(2025, 8, 21, 0, 1, 1).unwrap());
         assert!(!due_dates_equivalent(&google_due_far, &todo_due_far));
+    }
+
+    #[test]
+    fn notes_helpers_add_and_detect_ownership_marker() {
+        assert!(notes_have_ownership_marker(Some(
+            GOOGLE_TASK_OWNERSHIP_MARKER
+        )));
+        assert_eq!(
+            notes_with_ownership_marker(None),
+            GOOGLE_TASK_OWNERSHIP_MARKER
+        );
+        assert_eq!(
+            notes_with_ownership_marker(Some("comment")),
+            format!("comment\n\n{}", GOOGLE_TASK_OWNERSHIP_MARKER)
+        );
+    }
+
+    #[test]
+    fn desired_task_values_always_include_ownership_marker_in_notes() {
+        let with_comment = Todo {
+            title: "Title".to_string(),
+            comment: Some("comment".to_string()),
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+        let desired_with_comment = desired_task_values(&with_comment);
+        assert_eq!(
+            desired_with_comment.notes,
+            Some(format!("comment\n\n{}", GOOGLE_TASK_OWNERSHIP_MARKER))
+        );
+
+        let without_comment = Todo {
+            title: "Title".to_string(),
+            comment: None,
+            expanded: false,
+            done: false,
+            selected: false,
+            due_date: None,
+            google_task_id: None,
+        };
+        let desired_without_comment = desired_task_values(&without_comment);
+        assert_eq!(
+            desired_without_comment.notes,
+            Some(GOOGLE_TASK_OWNERSHIP_MARKER.to_string())
+        );
     }
 
     #[tokio::test]
@@ -842,7 +1027,10 @@ mod tests {
                     {
                         "id": "orphaned_task_id",
                         "title": "j:Orphaned Task",
-                        "notes": "This task has no local counterpart",
+                        "notes": format!(
+                            "This task has no local counterpart\n\n{}",
+                            GOOGLE_TASK_OWNERSHIP_MARKER
+                        ),
                         "status": "needsAction"
                     }
                 ]
@@ -870,6 +1058,154 @@ mod tests {
         .await;
 
         assert!(result.is_ok());
+        let requests = mock_server.received_requests().await.expect("requests");
+        assert_eq!(
+            request_count(
+                &requests,
+                "DELETE",
+                "/tasks/v1/lists/test_list_id/tasks/orphaned_task_id"
+            ),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_migrates_legacy_prefixed_tasks_and_skips_delete_in_same_run() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    {
+                        "id": "test_list_id",
+                        "title": "juggler"
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/test_list_id/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    {
+                        "id": "legacy_task_id",
+                        "title": "j:Legacy Task",
+                        "notes": "legacy notes",
+                        "status": "needsAction"
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/tasks/v1/lists/test_list_id/tasks/legacy_task_id"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "legacy_task_id",
+                "title": "j:Legacy Task",
+                "notes": format!("legacy notes\n\n{}", GOOGLE_TASK_OWNERSHIP_MARKER),
+                "status": "needsAction"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut todos: Vec<Todo> = vec![];
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let requests = mock_server.received_requests().await.expect("requests");
+        assert_eq!(
+            request_count(
+                &requests,
+                "PUT",
+                "/tasks/v1/lists/test_list_id/tasks/legacy_task_id"
+            ),
+            1
+        );
+        assert_eq!(
+            request_count(
+                &requests,
+                "DELETE",
+                "/tasks/v1/lists/test_list_id/tasks/legacy_task_id"
+            ),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_does_not_delete_unmarked_orphans() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/users/@me/lists"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    {
+                        "id": "test_list_id",
+                        "title": "juggler"
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/v1/lists/test_list_id/tasks"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    {
+                        "id": "manual_task_id",
+                        "title": "Manual task",
+                        "notes": "Created directly in Google Tasks",
+                        "status": "needsAction"
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/tasks/v1/lists/test_list_id/tasks/manual_task_id"))
+            .and(bearer_token("test_token"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let mut todos: Vec<Todo> = vec![];
+        let result = sync_to_tasks_with_base_url(
+            &mut todos,
+            "test_token",
+            false,
+            &mock_server.uri(),
+            &reqwest::Client::new(),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let requests = mock_server.received_requests().await.expect("requests");
+        assert_eq!(
+            request_count(
+                &requests,
+                "DELETE",
+                "/tasks/v1/lists/test_list_id/tasks/manual_task_id"
+            ),
+            0
+        );
     }
 
     #[tokio::test]
@@ -1572,7 +1908,12 @@ mod tests {
             .and(query_param("pageToken", "tok2"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "items": [
-                    { "id": "task_b", "title": "j:B", "status": "needsAction" }
+                    {
+                        "id": "task_b",
+                        "title": "j:B",
+                        "notes": format!("{}\n\n{}", "owned", GOOGLE_TASK_OWNERSHIP_MARKER),
+                        "status": "needsAction"
+                    }
                 ]
             })))
             .mount(&mock_server)
@@ -1584,7 +1925,12 @@ mod tests {
             .and(bearer_token("test_token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "items": [
-                    { "id": "task_a", "title": "j:A", "status": "needsAction" }
+                    {
+                        "id": "task_a",
+                        "title": "j:A",
+                        "notes": format!("{}\n\n{}", "owned", GOOGLE_TASK_OWNERSHIP_MARKER),
+                        "status": "needsAction"
+                    }
                 ],
                 "nextPageToken": "tok2"
             })))
@@ -1616,5 +1962,14 @@ mod tests {
         )
         .await;
         assert!(result.is_ok());
+        let requests = mock_server.received_requests().await.expect("requests");
+        assert_eq!(
+            request_count(&requests, "DELETE", "/tasks/v1/lists/list1/tasks/task_a"),
+            1
+        );
+        assert_eq!(
+            request_count(&requests, "DELETE", "/tasks/v1/lists/list1/tasks/task_b"),
+            1
+        );
     }
 }

@@ -199,14 +199,16 @@ The sync process pushes your local TODOs to Google Tasks (one-way sync):
 
 1. **Creates new tasks** in Google Tasks for local TODOs without `google_task_id`
 2. **Updates existing tasks** when title, notes, completion status, or due date changes in the local YAML
-3. **Deletes orphaned tasks** in Google Tasks that no longer exist in your local YAML
+3. **Deletes orphaned tasks** in Google Tasks only when they carry juggler's ownership marker in notes
 4. **Maps task properties** from local to Google Tasks:
    - TODO `title` → Google Task `title`
-   - TODO `comment` → Google Task `notes`
+   - TODO `comment` → Google Task `notes` (plus juggler ownership marker metadata)
    - TODO `done` → Google Task `status` (completed/needsAction)
    - TODO `due_date` → Google Task `due`
 
 After sync, each TODO item gets a `google_task_id` field linking it to the corresponding Google Task.
+
+On first sync after upgrading, juggler migrates legacy `j:` tasks by adding the ownership marker and skips orphan deletion for that run. Run sync again after migration to apply marker-based orphan cleanup.
 
 **Important**: Changes made directly in Google Tasks will be **overwritten** on the next sync. Always edit your TODOs in the local YAML file or through the juggler TUI.
 
