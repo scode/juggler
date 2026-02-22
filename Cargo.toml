@@ -12,8 +12,6 @@ crossterm = "0"
 ratatui = "0"
 color-eyre = "0"
 serde = { version = "1", features = ["derive"] }
-# Legacy migration reader for TODOs.yaml fallback; removable after migration window closes.
-serde_yaml = "0"
 toml = { version = "0.8", features = ["preserve_order"] }
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0", features = ["serde"] }

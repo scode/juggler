@@ -13,9 +13,6 @@ pub enum JugglerError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("YAML error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
-
     #[error("TOML parse error: {0}")]
     TomlDe(#[from] toml::de::Error),
 
