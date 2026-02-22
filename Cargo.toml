@@ -6,6 +6,7 @@ authors = ["Peter Schuller <peter.schuller@infidyne.com>"]
 license = "MIT"
 edition = "2024"
 repository = "https://github.com/scode/juggler"
+homepage = "https://github.com/scode/juggler"
 
 [dependencies]
 crossterm = "0"
