@@ -26,6 +26,20 @@ Keep it opinionated and durable; do not use it as an architecture inventory.
 - For Google Tasks sync, treat the notes ownership marker (`JUGGLER_META_OWNED_V1`) as the deletion authority.
 - Keep logout behavior idempotent: deleting a missing refresh token should be treated as success.
 
+## Commit message intent
+
+- All commits created by agents must follow Conventional Commits as expected by `git-cliff` when `conventional_commits` parsing is enabled.
+- Required header format: `<type>[optional scope][!]: <description>`
+- `type` must be lowercase. `feat` is required for new features and `fix` is required for bug fixes. Other allowed types are `docs`/`doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, and `revert`.
+- `description` is required, must immediately follow `: `, and should be a concise summary of the change.
+- `scope` is optional and must be a short noun in parentheses, for example `fix(parser):`.
+- `!` is optional and only valid immediately before `:` to signal a breaking change.
+- An optional body may be added only after one blank line following the header.
+- Optional footer lines may be added only after one blank line following the body (or following the header when there is no body).
+- Footer lines must use git trailer style (`Token: value`), with one footer per line.
+- Breaking changes must include a line starting with `BREAKING CHANGE: ` in the body or footer, even when `!` is used in the header.
+- Commit messages that do not follow these rules are not allowed.
+
 ## Release intent
 
 - Releases are managed with `cargo dist`.
