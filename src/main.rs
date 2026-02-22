@@ -43,7 +43,7 @@ fn create_oauth_client_from_keychain(
 }
 
 fn maybe_persist_todos_after_sync(
-    todos: &[Todo],
+    todos: &mut [Todo],
     todos_file: &std::path::Path,
     dry_run: bool,
 ) -> Result<()> {
@@ -54,7 +54,7 @@ fn maybe_persist_todos_after_sync(
     store_todos(todos, todos_file)
 }
 
-fn save_todos_before_sync(todos: &[Todo], todos_file: &std::path::Path) -> Result<()> {
+fn save_todos_before_sync(todos: &mut [Todo], todos_file: &std::path::Path) -> Result<()> {
     store_todos(todos, todos_file)
 }
 
@@ -180,7 +180,8 @@ async fn main() -> Result<()> {
                     sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
                     // Save the updated todos with new google_task_ids
-                    if let Err(e) = maybe_persist_todos_after_sync(&todos, &todos_file, dry_run) {
+                    if let Err(e) = maybe_persist_todos_after_sync(&mut todos, &todos_file, dry_run)
+                    {
                         error!("Warning: Failed to save todos after sync: {e}");
                         return Err(e);
                     }
@@ -203,7 +204,7 @@ async fn main() -> Result<()> {
                 // Always save local TODOs before attempting any sync. If the sync is slow
                 // and the user kills the process or something, we want to make sure we don't
                 // *locally* lose their changes.
-                if let Err(e) = save_todos_before_sync(&todos, &todos_file) {
+                if let Err(e) = save_todos_before_sync(&mut todos, &todos_file) {
                     error!("Warning: Failed to save todos before sync: {e}");
                     return Err(e);
                 }
@@ -218,7 +219,7 @@ async fn main() -> Result<()> {
                             Ok(()) => {
                                 info!("Sync completed successfully!");
                                 // Save again to persist any updated google_task_id values
-                                if let Err(e) = store_todos(&todos, &todos_file) {
+                                if let Err(e) = store_todos(&mut todos, &todos_file) {
                                     error!("Warning: Failed to save todos after sync: {e}");
                                 }
                             }
@@ -233,8 +234,11 @@ async fn main() -> Result<()> {
                         error!("Skipping sync. Todos were saved prior to sync attempt.");
                     }
                 }
-            } else if let Err(e) = store_todos(&app.items(), &todos_file) {
-                error!("Warning: Failed to save todos: {e}");
+            } else {
+                let mut todos = app.items();
+                if let Err(e) = store_todos(&mut todos, &todos_file) {
+                    error!("Warning: Failed to save todos: {e}");
+                }
             }
 
             return app_result;
@@ -258,6 +262,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }
     }
@@ -269,7 +274,7 @@ mod tests {
             .filter(|entry| {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
-                name.starts_with("TODOs_") && name.ends_with(".yaml")
+                name.starts_with("TODOs_") && name.ends_with(".toml")
             })
             .count()
     }
@@ -277,12 +282,14 @@ mod tests {
     #[test]
     fn dry_run_sync_does_not_rewrite_local_todos_or_create_archives() {
         let temp_dir = TempDir::new().expect("create temp dir");
-        let todos_file = temp_dir.path().join("TODOs.yaml");
+        let todos_file = temp_dir.path().join("TODOs.toml");
 
-        store_todos(&[make_todo("original")], &todos_file).expect("store initial todos");
+        let mut original = vec![make_todo("original")];
+        store_todos(&mut original, &todos_file).expect("store initial todos");
         let before = fs::read_to_string(&todos_file).expect("read initial todos file");
 
-        maybe_persist_todos_after_sync(&[make_todo("updated")], &todos_file, true)
+        let mut updated = vec![make_todo("updated")];
+        maybe_persist_todos_after_sync(&mut updated, &todos_file, true)
             .expect("dry-run persist should succeed");
 
         let after = fs::read_to_string(&todos_file).expect("read todos file after dry-run");
@@ -293,35 +300,38 @@ mod tests {
     #[test]
     fn non_dry_run_sync_persists_local_todos_and_archives_previous_file() {
         let temp_dir = TempDir::new().expect("create temp dir");
-        let todos_file = temp_dir.path().join("TODOs.yaml");
+        let todos_file = temp_dir.path().join("TODOs.toml");
 
-        store_todos(&[make_todo("original")], &todos_file).expect("store initial todos");
+        let mut original = vec![make_todo("original")];
+        store_todos(&mut original, &todos_file).expect("store initial todos");
 
-        maybe_persist_todos_after_sync(&[make_todo("updated")], &todos_file, false)
+        let mut updated = vec![make_todo("updated")];
+        maybe_persist_todos_after_sync(&mut updated, &todos_file, false)
             .expect("persist should succeed");
 
         let after = fs::read_to_string(&todos_file).expect("read updated todos file");
-        assert!(after.contains("title: updated"));
+        assert!(after.contains("title = \"updated\""));
         assert_eq!(archive_file_count(temp_dir.path()), 1);
     }
 
     #[test]
     fn save_todos_before_sync_persists_to_file_path() {
         let temp_dir = TempDir::new().expect("create temp dir");
-        let todos_file = temp_dir.path().join("TODOs.yaml");
+        let todos_file = temp_dir.path().join("TODOs.toml");
 
-        save_todos_before_sync(&[make_todo("saved-before-sync")], &todos_file)
-            .expect("save should succeed");
+        let mut todos = vec![make_todo("saved-before-sync")];
+        save_todos_before_sync(&mut todos, &todos_file).expect("save should succeed");
 
         let content = fs::read_to_string(&todos_file).expect("read saved todos");
-        assert!(content.contains("title: saved-before-sync"));
+        assert!(content.contains("title = \"saved-before-sync\""));
     }
 
     #[test]
     fn save_todos_before_sync_returns_error_for_directory_path() {
         let temp_dir = TempDir::new().expect("create temp dir");
 
-        let result = save_todos_before_sync(&[make_todo("cannot-save")], temp_dir.path());
+        let mut todos = vec![make_todo("cannot-save")];
+        let result = save_todos_before_sync(&mut todos, temp_dir.path());
         assert!(result.is_err());
     }
 }

@@ -16,6 +16,12 @@ pub enum JugglerError {
     #[error("YAML error: {0}")]
     Yaml(#[from] serde_yaml::Error),
 
+    #[error("TOML parse error: {0}")]
+    TomlDe(#[from] toml::de::Error),
+
+    #[error("TOML serialization error: {0}")]
+    TomlSer(#[from] toml::ser::Error),
+
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 

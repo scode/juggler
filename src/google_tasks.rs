@@ -659,6 +659,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         };
         let desired_with_comment = desired_task_values(&with_comment);
@@ -674,6 +675,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         };
         let desired_without_comment = desired_task_values(&without_comment);
@@ -732,6 +734,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -772,6 +775,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -815,6 +819,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -888,6 +893,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: Some("existing_task_id".to_string()),
         }];
 
@@ -1152,6 +1158,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1220,6 +1227,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: Some(test_due_date),
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1284,6 +1292,7 @@ mod tests {
             done: true, // Task is completed
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1363,6 +1372,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1441,6 +1451,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1506,6 +1517,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: Some("t1".to_string()),
         }];
 
@@ -1635,6 +1647,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: Some("existing_oauth_task_id".to_string()),
         }];
 
@@ -1687,6 +1700,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 
@@ -1775,6 +1789,7 @@ mod tests {
             done: false,
             selected: false,
             due_date: None,
+            todo_id: None,
             google_task_id: None,
         }];
 

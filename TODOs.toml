@@ -1,0 +1,41 @@
+[metadata]
+format_version = 1
+juggler_edition = 1
+
+[todos.T1]
+title = "Item 0"
+done = false
+due_date = "2025-07-09T03:31:03.777373Z"
+google_task_id = "cDQtSWZSLU5WMnNyeTJrQg"
+
+[todos.T2]
+title = "Item 2"
+comment = "Another comment for item 2."
+done = false
+due_date = "2025-07-09T03:31:05.122103Z"
+google_task_id = "NHlWZkI5NlJzbTRBTGRYTw"
+
+[todos.T3]
+title = "Item 3"
+done = false
+due_date = "2025-07-09T03:31:05.465388Z"
+google_task_id = "aGpBb3ZSQTBLak5vb3NpWA"
+
+[todos.T4]
+title = "Item 5"
+done = false
+due_date = "2025-07-09T03:31:07.886706Z"
+google_task_id = "ZVZZV21sem9NU1YyRUVpQQ"
+
+[todos.T5]
+title = "Item 1"
+comment = """This is a comment for item 1.
+It can span multiple lines."""
+done = false
+due_date = "2031-01-08T09:00:00Z"
+google_task_id = "ZlQtMERwTEVxMlBlSG9zeg"
+
+[todos.T6]
+title = "Completed task example"
+done = true
+google_task_id = "blhCbW1JQkg4V0lRV21OeQ"

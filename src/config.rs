@@ -64,5 +64,5 @@ pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
 }
 
 pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
-    get_juggler_dir().map(|dir| dir.join("TODOs.yaml"))
+    get_juggler_dir().map(|dir| dir.join("TODOs.toml"))
 }

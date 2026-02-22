@@ -14,7 +14,7 @@ The product prioritizes:
 ## 2) Product Goals
 
 1. Let users manage task state quickly without leaving the terminal.
-2. Keep tasks durable and editable as plain YAML under user control.
+2. Keep tasks durable and editable as plain TOML under user control.
 3. Provide optional one-way synchronization to Google Tasks with minimal setup.
 4. Make destructive remote effects explicit and predictable.
 
@@ -44,7 +44,7 @@ Why: terminal users should manage tasks in a continuous flow without command chu
 
 - `juggler login`: authorize against Google and store a long-lived refresh credential.
 - `juggler logout`: remove stored refresh credential.
-- `juggler sync google-tasks`: push local YAML state to Google Tasks.
+- `juggler sync google-tasks`: push local TOML state to Google Tasks.
 - `--dry-run` on sync: preview operations with no local-file writes and no Google writes.
 
 Why: auth/sync lifecycle should be scriptable and usable outside interactive sessions.
@@ -52,6 +52,7 @@ Why: auth/sync lifecycle should be scriptable and usable outside interactive ses
 ## 6) Task Model (Product Semantics)
 
 Each task has:
+- `todo_id` (stable local primary key in storage, formatted as `T<N>`)
 - `title` (primary user-facing label)
 - `comment` (optional details, multiline allowed)
 - `done` (completion state)
@@ -63,6 +64,7 @@ Behavioral semantics:
 - Pending and done are separate sections in the UI.
 - Completion state determines section membership.
 - Due dates support urgency signaling and quick adjustments.
+- `todo_id` values are user-visible in on-disk storage and remain stable across saves.
 - `google_task_id` is an identity link used to reconcile local tasks with remote tasks.
 
 Why: this is the minimal model needed for quick personal task control plus sync reconciliation.
@@ -82,12 +84,17 @@ Why: power users need fast repetitive operations and full-text editing with thei
 
 ## 8) Local Data Ownership and Safety Requirements
 
-1. Local YAML is always the authoritative record.
+1. Local TOML is always the authoritative record.
 2. Data is stored in a user-owned file under the user’s home directory.
 3. Writes must prioritize durability and corruption resistance.
 4. Previous versions are archived automatically to support rollback/recovery.
 5. Durability strategy assumes users may rely on ordinary filesystem backup tools or cloud file synchronization without rewind/history; automated backups therefore create fresh archive files rather than mutating one backup in place.
 6. Dry-run sync must not mutate local files.
+7. The persisted file format is:
+   - `[metadata]` with `format_version` and `juggler_edition`, both required and currently `1`.
+   - `[todos]` table with one subtable per todo keyed by stable `T<N>` ids.
+8. Missing/optional fields are omitted from TOML when absent.
+9. If TOML is missing, legacy YAML may be read for backward compatibility; writes always emit TOML and do not modify legacy YAML.
 
 Why: users should never lose control of their source data because of sync or transport failures.
 
@@ -117,7 +124,7 @@ Why: users want predictable publication of local state, not bidirectional confli
 
 ## 11) Security and Privacy Requirements
 
-1. Authentication credentials are stored in OS keychain facilities, not in task YAML.
+1. Authentication credentials are stored in OS keychain facilities, not in task TOML.
 2. Logging should avoid exposing sensitive tokens.
 3. OAuth flow must validate callback state to prevent callback forgery/cross-session injection.
 
