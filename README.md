@@ -30,8 +30,19 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 
 ## Installation
 
+### macOS and Linux (Homebrew)
+
 ```bash
-cargo build --release
+brew install scode/dist-tap/juggler
+```
+
+### Other platforms
+
+1. Install Rust using [rustup](https://rustup.rs/).
+2. From the repository root, run:
+
+```bash
+cargo install --path .
 ```
 
 ## Basic Usage
