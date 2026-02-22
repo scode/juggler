@@ -282,6 +282,10 @@ fn submit_prompt(model: &mut AppModel, now: DateTime<Utc>) {
 }
 
 fn apply_edited_item(model: &mut AppModel, section: Section, index: usize, updated_item: Todo) {
+    if updated_item.title.trim().is_empty() {
+        return;
+    }
+
     let Some(done_changed) = model
         .items
         .get(section, index)
@@ -621,5 +625,25 @@ mod tests {
         );
         assert_eq!(model.items.pending_count(), 0);
         assert_eq!(model.items.done_count(), 1);
+    }
+
+    #[test]
+    fn apply_edited_item_rejects_empty_title() {
+        let base = Utc::now();
+        let mut model = AppModel::new(vec![todo("existing")]);
+        update(&mut model, Action::Normal(NormalAction::Edit), base);
+
+        update(
+            &mut model,
+            Action::ApplyEditedItem {
+                section: Section::Pending,
+                index: 0,
+                updated_item: todo(" "),
+            },
+            base,
+        );
+
+        assert_eq!(model.items.pending_count(), 1);
+        assert_eq!(model.items.pending[0].title, "existing");
     }
 }
