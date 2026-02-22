@@ -94,7 +94,7 @@ Why: power users need fast repetitive operations and full-text editing with thei
    - `[metadata]` with `format_version` and `juggler_edition`, both required and currently `1`.
    - `[todos]` table with one subtable per todo keyed by stable `T<N>` ids.
 8. Missing/optional fields are omitted from TOML when absent.
-9. If TOML is missing, legacy YAML may be read for backward compatibility; writes always emit TOML and do not modify legacy YAML.
+9. If the canonical TOML store is missing, juggler starts from an empty task list.
 
 Why: users should never lose control of their source data because of sync or transport failures.
 

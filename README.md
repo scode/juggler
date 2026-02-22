@@ -250,8 +250,6 @@ After sync, each TODO item gets a `google_task_id` field linking it to the corre
 
 By default, TODOs are stored at `~/.juggler/TODOs.toml`. Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.toml`).
 
-If `TODOs.toml` is missing, juggler will read legacy `TODOs.yaml` for compatibility. Subsequent saves always write TOML and leave the legacy YAML file unchanged.
-
 ```toml
 [metadata]
 format_version = 1

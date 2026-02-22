@@ -37,20 +37,6 @@ pub struct TodoItem {
     pub google_task_id: Option<String>,
 }
 
-/// Legacy YAML record shape accepted only for one-way migration reads.
-///
-/// We intentionally keep this type scoped to fallback loading so the write path
-/// cannot accidentally emit legacy YAML again.
-#[derive(Debug, serde::Deserialize)]
-struct LegacyTodoItem {
-    title: String,
-    comment: Option<String>,
-    #[serde(default)]
-    done: bool,
-    due_date: Option<DateTime<Utc>>,
-    google_task_id: Option<String>,
-}
-
 /// Version gate for persisted TODO files.
 ///
 /// `format_version` governs machine-readable schema evolution while
@@ -120,17 +106,12 @@ impl From<&TodoItem> for TodoRecord {
     }
 }
 
-/// Load todos from canonical TOML, with YAML fallback only when TOML is absent.
-///
-/// If TOML exists but is invalid or version-incompatible, loading fails
-/// deliberately rather than silently falling back to legacy data.
+/// Load todos from canonical TOML.
 pub fn load_todos<P: AsRef<std::path::Path>>(file_path: P) -> Result<Vec<Todo>> {
     let file_path = file_path.as_ref();
     let content = match fs::read_to_string(file_path) {
         Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return load_legacy_todos_or_empty(file_path);
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
 
@@ -343,48 +324,6 @@ pub(crate) fn parse_due_date(input: &str) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(input)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| JugglerError::config(format!("Invalid due_date value '{}': {}", input, e)))
-}
-
-/// Read legacy YAML when canonical TOML is missing, assigning deterministic
-/// `T1..Tn` IDs in source order for migration.
-fn load_legacy_todos_or_empty(file_path: &std::path::Path) -> Result<Vec<Todo>> {
-    let legacy_path = legacy_yaml_path(file_path);
-    let content = match fs::read_to_string(&legacy_path) {
-        Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
-    };
-
-    // Treat blank legacy files as an empty task list to match the "missing
-    // file -> empty list" behavior during migration fallback.
-    if content.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let legacy_items: Vec<LegacyTodoItem> = serde_yaml::from_str(&content)?;
-    let todos = legacy_items
-        .into_iter()
-        .enumerate()
-        .map(|(index, item)| Todo {
-            title: item.title,
-            comment: item.comment,
-            expanded: false,
-            done: item.done,
-            selected: false,
-            due_date: item.due_date,
-            todo_id: Some(format_todo_id((index as u64) + 1)),
-            google_task_id: item.google_task_id,
-        })
-        .collect();
-
-    Ok(todos)
-}
-
-/// Compute sibling `TODOs.yaml` path from canonical `TODOs.toml`.
-fn legacy_yaml_path(toml_path: &std::path::Path) -> std::path::PathBuf {
-    let mut legacy = toml_path.to_path_buf();
-    legacy.set_extension("yaml");
-    legacy
 }
 
 fn archive_todos_file(file_path: &std::path::Path, clock: &dyn Clock) -> Result<()> {
@@ -602,94 +541,6 @@ done = false
 
         let err = load_todos(&test_file).expect_err("invalid key should error");
         assert!(err.to_string().contains("Invalid todo id 'bad'"));
-    }
-
-    #[test]
-    fn load_todos_prefers_toml_when_toml_and_yaml_exist() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        fs::write(
-            &toml_file,
-            r#"[metadata]
-format_version = 1
-juggler_edition = 1
-
-[todos.T1]
-title = "from toml"
-done = false
-"#,
-        )
-        .expect("write toml fixture");
-
-        fs::write(&yaml_file, "- title: from yaml\n").expect("write yaml fixture");
-
-        let todos = load_todos(&toml_file).expect("load todos");
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].title, "from toml");
-    }
-
-    #[test]
-    fn load_todos_reads_legacy_yaml_when_toml_missing() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        fs::write(
-            &yaml_file,
-            r#"- title: Item 1
-  comment: Legacy comment
-  done: false
-  due_date: null
-  google_task_id: legacy-google-id
-- title: Completed task example
-  comment: null
-  done: true
-  due_date: null
-  google_task_id: null
-"#,
-        )
-        .expect("write legacy yaml");
-
-        let todos = load_todos(&toml_file).expect("load legacy todos");
-        assert_eq!(todos.len(), 2);
-        assert_eq!(todos[0].todo_id.as_deref(), Some("T1"));
-        assert_eq!(todos[1].todo_id.as_deref(), Some("T2"));
-        assert_eq!(todos[0].title, "Item 1");
-        assert_eq!(todos[1].title, "Completed task example");
-    }
-
-    #[test]
-    fn load_todos_reads_empty_legacy_yaml_array_when_toml_missing() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        fs::write(&yaml_file, "[]\n").expect("write empty legacy yaml array");
-
-        let todos = load_todos(&toml_file).expect("load todos from empty yaml array");
-        assert!(todos.is_empty());
-    }
-
-    #[test]
-    fn load_todos_reads_blank_legacy_yaml_as_empty_when_toml_missing() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        fs::write(&yaml_file, "   \n\t\n").expect("write blank legacy yaml");
-
-        let todos = load_todos(&toml_file).expect("load todos from blank yaml");
-        assert!(todos.is_empty());
     }
 
     #[test]
@@ -1042,128 +893,5 @@ done = false
         assert!(content.contains("[metadata]"));
         assert!(content.contains("format_version = 1"));
         assert!(content.contains("juggler_edition = 1"));
-    }
-
-    #[test]
-    fn migration_from_yaml_write_creates_toml_and_keeps_yaml_unchanged() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        let legacy_content = r#"- title: Legacy Item
-  comment: null
-  done: false
-  due_date: null
-  google_task_id: null
-"#;
-        fs::write(&yaml_file, legacy_content).expect("write yaml");
-
-        let mut todos = load_todos(&toml_file).expect("load from yaml fallback");
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].todo_id.as_deref(), Some("T1"));
-
-        store_todos(&mut todos, &toml_file).expect("store to toml");
-
-        assert!(toml_file.exists());
-        let yaml_after = fs::read_to_string(&yaml_file).expect("read yaml after");
-        assert_eq!(yaml_after, legacy_content);
-
-        let loaded = load_todos(&toml_file).expect("load toml after migration");
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].todo_id.as_deref(), Some("T1"));
-    }
-
-    #[test]
-    fn migration_roundtrip_preserves_due_date_and_google_task_id() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        let legacy_content = r#"- title: Legacy Item
-  comment: keep this
-  done: false
-  due_date: 2025-02-03T04:05:06Z
-  google_task_id: legacy-google-id
-"#;
-        fs::write(&yaml_file, legacy_content).expect("write yaml");
-
-        let mut todos = load_todos(&toml_file).expect("load from yaml fallback");
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].todo_id.as_deref(), Some("T1"));
-        assert_eq!(todos[0].google_task_id.as_deref(), Some("legacy-google-id"));
-        assert_eq!(
-            todos[0].due_date,
-            Some(
-                chrono::DateTime::parse_from_rfc3339("2025-02-03T04:05:06Z")
-                    .expect("parse expected datetime")
-                    .with_timezone(&Utc)
-            )
-        );
-
-        store_todos(&mut todos, &toml_file).expect("store to toml");
-        fs::write(
-            &yaml_file,
-            r#"- title: changed yaml that should now be ignored
-  due_date: 2030-01-01T00:00:00Z
-  google_task_id: changed-id
-"#,
-        )
-        .expect("mutate legacy yaml after migration");
-
-        let loaded = load_todos(&toml_file).expect("load toml after migration");
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].title, "Legacy Item");
-        assert_eq!(loaded[0].todo_id.as_deref(), Some("T1"));
-        assert_eq!(
-            loaded[0].google_task_id.as_deref(),
-            Some("legacy-google-id")
-        );
-        assert_eq!(
-            loaded[0].due_date,
-            Some(
-                chrono::DateTime::parse_from_rfc3339("2025-02-03T04:05:06Z")
-                    .expect("parse expected datetime")
-                    .with_timezone(&Utc)
-            )
-        );
-    }
-
-    #[test]
-    fn migration_follow_up_archives_use_toml_extension() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("create temp dir");
-        let toml_file = temp_dir.path().join("TODOs.toml");
-        let yaml_file = temp_dir.path().join("TODOs.yaml");
-
-        fs::write(
-            &yaml_file,
-            r#"- title: Legacy Item
-  done: false
-"#,
-        )
-        .expect("write legacy yaml");
-
-        let fixed_now = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let clock = fixed_clock(fixed_now);
-
-        let mut todos = load_todos(&toml_file).expect("load from yaml fallback");
-        store_todos_with_clock(&mut todos, &toml_file, clock.clone()).expect("first toml write");
-
-        todos[0].title = "Updated item".to_string();
-        store_todos_with_clock(&mut todos, &toml_file, clock.clone())
-            .expect("second toml write with archive");
-
-        let timestamp = fixed_now.format("%Y-%m-%dT%H-%M-%S");
-        let toml_archive = temp_dir.path().join(format!("TODOs_{timestamp}.toml"));
-        let yaml_archive = temp_dir.path().join(format!("TODOs_{timestamp}.yaml"));
-        assert!(toml_archive.exists());
-        assert!(!yaml_archive.exists());
     }
 }
