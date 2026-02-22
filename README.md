@@ -14,20 +14,6 @@ A TODO juggler TUI application built with [Ratatui] that displays and manages TO
 - **Completion Tracking**: Mark items as done/undone
 - **Snooze/Prepone**: Quickly adjust due dates by ±1 day or ±7 days, plus custom delays
 
-## Quick Start
-
-1. **Build the application:**
-   ```bash
-   cargo build --release
-   ```
-
-2. **Run the TUI:**
-   ```bash
-   ./target/release/juggler
-   ```
-
-3. Optional: **Google Tasks sync is currently very bare bones** and requires manual setup (including changing OAuth client values in code). See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
-
 ## Installation
 
 ### macOS and Linux (Homebrew)
@@ -44,6 +30,15 @@ brew install scode/dist-tap/juggler
 ```bash
 cargo install --path .
 ```
+
+## Quick Start
+
+1. **Run the TUI:**
+   ```bash
+   juggler
+   ```
+
+2. Optional: **Google Tasks sync is currently very bare bones** and requires manual setup (including changing OAuth client values in code). See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Basic Usage
 
