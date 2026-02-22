@@ -54,6 +54,10 @@ fn maybe_persist_todos_after_sync(
     store_todos(todos, todos_file)
 }
 
+fn save_todos_before_sync(todos: &[Todo], todos_file: &std::path::Path) -> Result<()> {
+    store_todos(todos, todos_file)
+}
+
 #[derive(Parser)]
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
@@ -191,19 +195,20 @@ async fn main() -> Result<()> {
             ratatui::restore();
 
             if app.should_sync_on_exit() {
+                let mut todos = app.items();
+
                 // Always save local TODOs before attempting any sync. If the sync is slow
                 // and the user kills the process or something, we want to make sure we don't
                 // *locally* lose their changes.
-                if let Err(e) = store_todos(&app.items(), &todos_file) {
+                if let Err(e) = save_todos_before_sync(&todos, &todos_file) {
                     error!("Warning: Failed to save todos before sync: {e}");
+                    return Err(e);
                 }
 
                 info!("Syncing TODOs with Google Tasks on exit...");
 
                 match create_oauth_client_from_keychain(&cred_store, http_client) {
                     Ok(oauth_client) => {
-                        let mut todos = app.items();
-
                         let sync_result =
                             sync_to_tasks_with_oauth(&mut todos, oauth_client, false).await;
                         match sync_result {
@@ -295,5 +300,25 @@ mod tests {
         let after = fs::read_to_string(&todos_file).expect("read updated todos file");
         assert!(after.contains("title: updated"));
         assert_eq!(archive_file_count(temp_dir.path()), 1);
+    }
+
+    #[test]
+    fn save_todos_before_sync_persists_to_file_path() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let todos_file = temp_dir.path().join("TODOs.yaml");
+
+        save_todos_before_sync(&[make_todo("saved-before-sync")], &todos_file)
+            .expect("save should succeed");
+
+        let content = fs::read_to_string(&todos_file).expect("read saved todos");
+        assert!(content.contains("title: saved-before-sync"));
+    }
+
+    #[test]
+    fn save_todos_before_sync_returns_error_for_directory_path() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+
+        let result = save_todos_before_sync(&[make_todo("cannot-save")], temp_dir.path());
+        assert!(result.is_err());
     }
 }

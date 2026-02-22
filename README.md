@@ -67,7 +67,7 @@ cargo run
 - `P` - Prepone by 7 days for selected items; if none selected, prepone the cursored item
 - `t` - Custom delay prompt (e.g., 5d, -2h)
 - `q` - Quit and save
-- `Q` - Quit, save, and sync to Google Tasks
+- `Q` - Quit, save, and sync to Google Tasks (sync is skipped if the initial local save fails)
 
 Note: Actions operate on all selected items. If no items are selected, they apply to the item under the cursor.
 
