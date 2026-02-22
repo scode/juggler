@@ -137,11 +137,8 @@ Why: trust depends on transparent failures and no silent data corruption/loss.
 
 These are intentionally documented here for product clarity; fixing them is separate work.
 
-1. "Quit with sync" can continue to remote sync even when the initial local save fails.
-Reason this is likely a divergence: product intent suggests "save local first, then sync" as a safety guard, but the current flow may still sync remotely after a local-save error.
-
-2. Remote deletion is strict reconciliation without explicit ownership semantics that make deletion confidence high by design.
+1. Remote deletion is strict reconciliation without explicit ownership semantics that make deletion confidence high by design.
 Reason this is likely a divergence: intended behavior prefers low-friction deletion with minimal ambiguity, rather than relying on protective ambiguity handling.
 
-3. Logout currently errors in some "already logged out" states.
+2. Logout currently errors in some "already logged out" states.
 Reason this is likely a divergence: intended behavior is idempotent logout.
