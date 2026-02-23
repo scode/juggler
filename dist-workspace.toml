@@ -19,3 +19,7 @@ install-updater = true
 tap = "scode/homebrew-dist-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
+# Run release-plan tests in dist's release workflow so we avoid expensive macOS
+# runs on regular PR/push CI, while still requiring Linux+macOS tests before
+# release artifact builds and publishing.
+plan-jobs = ["./release-plan-tests"]
