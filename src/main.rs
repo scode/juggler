@@ -62,6 +62,14 @@ fn save_todos_before_sync(todos: &mut [Todo], todos_file: &std::path::Path) -> R
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
 struct Cli {
+    #[arg(
+        long,
+        global = true,
+        value_name = "DIR",
+        help = "Override juggler data directory (default: ~/.juggler or $JUGGLER_DIR)"
+    )]
+    juggler_dir: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -96,7 +104,7 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env).init();
 
     let cli = Cli::parse();
-    let todos_file = get_todos_file_path()?;
+    let todos_file = get_todos_file_path(cli.juggler_dir.as_deref())?;
 
     let cred_store = KeyringCredentialStore::new();
     let http_client = reqwest::Client::new();
@@ -252,6 +260,7 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn make_todo(title: &str) -> Todo {
@@ -333,5 +342,36 @@ mod tests {
         let mut todos = vec![make_todo("cannot-save")];
         let result = save_todos_before_sync(&mut todos, temp_dir.path());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parses_global_juggler_dir_without_subcommand() {
+        let cli = Cli::parse_from(["juggler", "--juggler-dir", "custom-dir"]);
+
+        assert_eq!(cli.juggler_dir, Some(PathBuf::from("custom-dir")));
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn cli_parses_global_juggler_dir_with_nested_subcommand() {
+        let cli = Cli::parse_from([
+            "juggler",
+            "--juggler-dir",
+            "custom-dir",
+            "sync",
+            "google-tasks",
+            "--dry-run",
+        ]);
+
+        assert_eq!(cli.juggler_dir, Some(PathBuf::from("custom-dir")));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Sync {
+                service: SyncService::GoogleTasks {
+                    dry_run: true,
+                    debug_auth: false,
+                }
+            })
+        ));
     }
 }
