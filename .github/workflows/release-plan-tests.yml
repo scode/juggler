@@ -20,9 +20,9 @@ jobs:
       - name: cargo test --locked
         run: cargo test --locked --all-features --all-targets
   test-macos:
-    # Keep macOS out of regular PR release-plan runs for cost control, but run
-    # it for non-PR release executions so publishing is still macOS-tested.
-    if: github.event_name != 'pull_request'
+    # Keep macOS out of PR release-plan runs for cost control, but require it
+    # for actual tag-based releases before artifact publish.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-latest
     name: test macos-latest
     steps:
