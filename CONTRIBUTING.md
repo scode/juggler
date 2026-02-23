@@ -50,5 +50,6 @@ This setup has already been completed in this repository. It is not part of each
 6. Submit and merge a PR that includes `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`.
 7. Tag the merge commit as `vX.Y.Z` and push the tag.
 8. `cargo dist` handles the rest of the release workflow and uses the matching changelog heading for the GitHub Release body.
+9. The dist release plan runs tests on both Ubuntu and macOS before artifact builds. Regular `CI` (`.github/workflows/ci.yml`) keeps macOS tests disabled for non-release PR/push runs.
 
 See [dist documentation](https://github.com/axodotdev/cargo-dist) for details.

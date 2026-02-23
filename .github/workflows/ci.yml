@@ -65,7 +65,35 @@ jobs:
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: --cfg docsrs
+  test-linux:
+    runs-on: ubuntu-latest
+    name: test ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref_name == 'main'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Cache cargo registry, git, and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-test-linux-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-linux-
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test --locked
+        run: cargo test --locked --all-features --all-targets
   test-macos:
+    # Disabled to avoid macOS runner costs; set to true to re-enable.
+    if: ${{ false }}
     runs-on: macos-latest
     name: test macos-latest
     steps:

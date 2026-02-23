@@ -1,0 +1,39 @@
+name: Release Plan Tests
+
+on:
+  workflow_call:
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    name: test ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Rust toolchain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test --locked
+        run: cargo test --locked --all-features --all-targets
+  test-macos:
+    # Keep macOS out of regular PR release-plan runs for cost control, but run
+    # it for non-PR release executions so publishing is still macOS-tested.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    name: test macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Rust toolchain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test --locked
+        run: cargo test --locked --all-features --all-targets
