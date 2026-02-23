@@ -46,6 +46,7 @@ Why: terminal users should manage tasks in a continuous flow without command chu
 - `juggler logout`: remove stored refresh credential.
 - `juggler sync google-tasks`: push local TOML state to Google Tasks.
 - `--dry-run` on sync: preview operations with no local-file writes and no Google writes.
+- `--juggler-dir <DIR>` / `JUGGLER_DIR`: override the local data directory (`--juggler-dir` wins when both are set).
 
 Why: auth/sync lifecycle should be scriptable and usable outside interactive sessions.
 
@@ -85,7 +86,7 @@ Why: power users need fast repetitive operations and full-text editing with thei
 ## 8) Local Data Ownership and Safety Requirements
 
 1. Local TOML is always the authoritative record.
-2. Data is stored in a user-owned file under the user’s home directory.
+2. Data is stored in a user-owned file under the user’s home directory by default, with explicit CLI/env overrides available for alternate locations.
 3. Writes must prioritize durability and corruption resistance.
 4. Previous versions are archived automatically to support rollback/recovery.
 5. Durability strategy assumes users may rely on ordinary filesystem backup tools or cloud file synchronization without rewind/history; automated backups therefore create fresh archive files rather than mutating one backup in place.

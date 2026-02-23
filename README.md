@@ -93,13 +93,20 @@ juggler sync google-tasks --help
 **Sync options:**
 - `--dry-run`: Log actions without executing them (safe testing mode)
 
+**Global options:**
+- `--juggler-dir <DIR>`: Override the juggler data directory for this invocation
+
+**Environment variables:**
+- `JUGGLER_DIR`: Override the juggler data directory when `--juggler-dir` is not provided
+- Precedence: `--juggler-dir` takes precedence over `JUGGLER_DIR`
+
 ## Google Tasks Sync
 
 Synchronization to Google Tasks is currently very bare bones and requires manual setup, including changing the OAuth client values in source code before building. See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Data Format
 
-By default, TODOs are stored at `~/.juggler/TODOs.toml`. Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.toml`).
+By default, TODOs are stored at `~/.juggler/TODOs.toml`. You can override the directory with `--juggler-dir <DIR>` or `JUGGLER_DIR` (with `--juggler-dir` taking precedence). Each save creates a timestamped backup of the previous file in the same directory (e.g., `TODOs_2025-01-07T09-00-00.toml`).
 
 ```toml
 [metadata]

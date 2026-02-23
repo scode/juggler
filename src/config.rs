@@ -4,7 +4,7 @@
 //! flow, credential storage, and Google Tasks sync.
 //!
 //! It also provides helpers for resolving juggler's data directory and TODO
-//! file path under the user's home directory.
+//! file path, including CLI/env overrides.
 
 pub const CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS: &str = "google-tasks";
 pub const CREDENTIAL_KEYRING_SERVICE: &str = "juggler";
@@ -52,8 +52,20 @@ pub const GOOGLE_TASK_OWNERSHIP_MARKER: &str = "JUGGLER_META_OWNED_V1";
 
 pub const GOOGLE_TASKS_SCOPE: &str = "https://www.googleapis.com/auth/tasks";
 
-pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
-    dirs::home_dir()
+fn resolve_juggler_dir(
+    cli_override: Option<&std::path::Path>,
+    env_override: Option<&std::ffi::OsStr>,
+    home_dir: Option<std::path::PathBuf>,
+) -> std::io::Result<std::path::PathBuf> {
+    if let Some(dir) = cli_override {
+        return Ok(dir.to_path_buf());
+    }
+
+    if let Some(dir) = env_override {
+        return Ok(std::path::PathBuf::from(dir));
+    }
+
+    home_dir
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -63,6 +75,70 @@ pub fn get_juggler_dir() -> std::io::Result<std::path::PathBuf> {
         .map(|home| home.join(".juggler"))
 }
 
-pub fn get_todos_file_path() -> std::io::Result<std::path::PathBuf> {
-    get_juggler_dir().map(|dir| dir.join("TODOs.toml"))
+pub fn get_juggler_dir(
+    cli_override: Option<&std::path::Path>,
+) -> std::io::Result<std::path::PathBuf> {
+    let env_override = std::env::var_os("JUGGLER_DIR").filter(|value| !value.is_empty());
+    resolve_juggler_dir(cli_override, env_override.as_deref(), dirs::home_dir())
+}
+
+pub fn get_todos_file_path(
+    cli_override: Option<&std::path::Path>,
+) -> std::io::Result<std::path::PathBuf> {
+    get_juggler_dir(cli_override).map(|dir| dir.join("TODOs.toml"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{ffi::OsStr, path::PathBuf};
+
+    #[test]
+    fn resolve_juggler_dir_prefers_cli_override_over_env_and_home() {
+        let resolved = resolve_juggler_dir(
+            Some(std::path::Path::new("cli-dir")),
+            Some(OsStr::new("env-dir")),
+            Some(PathBuf::from("home-dir")),
+        )
+        .expect("resolve juggler dir");
+
+        assert_eq!(resolved, PathBuf::from("cli-dir"));
+    }
+
+    #[test]
+    fn resolve_juggler_dir_uses_env_when_cli_override_is_missing() {
+        let resolved = resolve_juggler_dir(
+            None,
+            Some(OsStr::new("env-dir")),
+            Some(PathBuf::from("home-dir")),
+        )
+        .expect("resolve juggler dir");
+
+        assert_eq!(resolved, PathBuf::from("env-dir"));
+    }
+
+    #[test]
+    fn resolve_juggler_dir_defaults_to_home_subdirectory() {
+        let home = PathBuf::from("home-dir");
+
+        let resolved =
+            resolve_juggler_dir(None, None, Some(home.clone())).expect("resolve juggler dir");
+
+        assert_eq!(resolved, home.join(".juggler"));
+    }
+
+    #[test]
+    fn resolve_juggler_dir_errors_without_any_available_directory_source() {
+        let err = resolve_juggler_dir(None, None, None).expect_err("missing directory source");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn get_todos_file_path_uses_cli_override_directory() {
+        let todos_path = get_todos_file_path(Some(std::path::Path::new("cli-dir")))
+            .expect("resolve todos file path");
+
+        assert_eq!(todos_path, PathBuf::from("cli-dir").join("TODOs.toml"));
+    }
 }
