@@ -1,3 +1,5 @@
+![Juggler screenshot](docs/screenshot.png)
+
 # juggler
 
 A TODO juggler TUI application built with [Ratatui] that displays and manages TODO items from TOML files. Features a terminal user interface for managing tasks with due dates, comments, and Google Tasks synchronization.
