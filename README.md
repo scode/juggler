@@ -40,7 +40,7 @@ cargo install --path .
    juggler
    ```
 
-2. Optional: **Google Tasks sync is currently very bare bones** and requires manual setup (including changing OAuth client values in code). See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
+2. Optional: **Google Tasks sync is currently very bare bones** and requires manual setup. See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Basic Usage
 
@@ -66,7 +66,7 @@ cargo run
 - `P` - Prepone by 7 days for selected items; if none selected, prepone the cursored item
 - `t` - Custom delay prompt (e.g., 5d, -2h)
 - `q` - Quit and save
-- `Q` - Quit, save, and sync to Google Tasks (sync is skipped if the initial local save fails)
+- `Q` - Quit, save, and sync to Google Tasks (sync is skipped if local save fails or sync preconditions are missing)
 
 Note: Actions operate on all selected items. If no items are selected, they apply to the item under the cursor.
 
@@ -92,17 +92,23 @@ juggler sync google-tasks --help
 
 **Sync options:**
 - `--dry-run`: Log actions without executing them (safe testing mode)
+- `--debug-auth`: Print keychain diagnostics for authentication
 
 **Global options:**
 - `--juggler-dir <DIR>`: Override the juggler data directory for this invocation
+- `--google-oauth-client-id <ID>`: Google OAuth desktop client id (required for `login` and `sync` unless `GOOGLE_OAUTH_CLIENT_ID` is set; ignored by `logout`)
+- `--google-oauth-client-secret <SECRET>`: Google OAuth desktop client secret (required for `login` and `sync` unless `GOOGLE_OAUTH_CLIENT_SECRET` is set; ignored by `logout`)
 
 **Environment variables:**
 - `JUGGLER_DIR`: Override the juggler data directory when `--juggler-dir` is not provided
+- `GOOGLE_OAUTH_CLIENT_ID`: Fallback for `--google-oauth-client-id` in `login`/`sync`/TUI sync-on-exit flows
+- `GOOGLE_OAUTH_CLIENT_SECRET`: Fallback for `--google-oauth-client-secret` in `login`/`sync`/TUI sync-on-exit flows
 - Precedence: `--juggler-dir` takes precedence over `JUGGLER_DIR`
+- Precedence: `--google-oauth-client-id` and `--google-oauth-client-secret` take precedence over their environment-variable fallbacks
 
 ## Google Tasks Sync
 
-Synchronization to Google Tasks is currently very bare bones and requires manual setup, including changing the OAuth client values in source code before building. See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
+Synchronization to Google Tasks is currently very bare bones and requires manual setup. See [`docs/google-tasks-sync.md`](docs/google-tasks-sync.md).
 
 ## Data Format
 

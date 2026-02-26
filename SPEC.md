@@ -47,6 +47,7 @@ Why: terminal users should manage tasks in a continuous flow without command chu
 - `juggler sync google-tasks`: push local TOML state to Google Tasks.
 - `--dry-run` on sync: preview operations with no local-file writes and no Google writes.
 - `--juggler-dir <DIR>` / `JUGGLER_DIR`: override the local data directory (`--juggler-dir` wins when both are set).
+- `--google-oauth-client-id <ID>` / `GOOGLE_OAUTH_CLIENT_ID` and `--google-oauth-client-secret <SECRET>` / `GOOGLE_OAUTH_CLIENT_SECRET`: runtime OAuth client credentials for login/sync flows (flags override env vars).
 
 Why: auth/sync lifecycle should be scriptable and usable outside interactive sessions.
 
@@ -80,6 +81,7 @@ Why: this is the minimal model needed for quick personal task control plus sync 
 6. In-session ordering stability is currently preferred over continuous re-sorting; tasks may drift from strict due-date ordering until a later reload/session.
 7. Google Task titles synced by juggler intentionally include the `j:` prefix.
 8. Exiting can either save locally only or save + sync remotely.
+9. "Save + sync on exit" requires OAuth client credentials to be available at launch (flags or env vars); if missing, local save must still succeed and sync must be skipped with diagnostic logging.
 
 Why: power users need fast repetitive operations and full-text editing with their existing tools.
 
@@ -128,6 +130,7 @@ Why: users want predictable publication of local state, not bidirectional confli
 1. Authentication credentials are stored in OS keychain facilities, not in task TOML.
 2. Logging should avoid exposing sensitive tokens.
 3. OAuth flow must validate callback state to prevent callback forgery/cross-session injection.
+4. OAuth desktop client credentials (both client id and client secret) are supplied at runtime via command-line flags or environment variables rather than shipped as baked-in constants.
 
 Why: this is a local desktop tool; compromise of credentials should be minimized by default.
 

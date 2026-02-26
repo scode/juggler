@@ -15,8 +15,7 @@ use error::{JugglerError, Result};
 
 use clap::{Parser, Subcommand};
 use config::{
-    CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE, GOOGLE_OAUTH_CLIENT_ID,
-    get_todos_file_path,
+    CREDENTIAL_KEYRING_ACCOUNT_GOOGLE_TASKS, CREDENTIAL_KEYRING_SERVICE, get_todos_file_path,
 };
 use credential_storage::{CredentialError, CredentialStore, KeyringCredentialStore};
 use google_tasks::{GoogleOAuthClient, GoogleOAuthCredentials, sync_to_tasks_with_oauth};
@@ -27,6 +26,8 @@ use ui::{App, ExternalEditor, Todo};
 fn create_oauth_client_from_keychain(
     cred_store: &dyn CredentialStore,
     http_client: reqwest::Client,
+    oauth_client_id: &str,
+    oauth_client_secret: &str,
 ) -> Result<GoogleOAuthClient> {
     let refresh_token = cred_store.get_refresh_token().map_err(|_| {
         JugglerError::config(
@@ -35,11 +36,45 @@ fn create_oauth_client_from_keychain(
     })?;
 
     let credentials = GoogleOAuthCredentials {
-        client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+        client_id: oauth_client_id.to_string(),
+        client_secret: oauth_client_secret.to_string(),
         refresh_token,
     };
 
     Ok(GoogleOAuthClient::new(credentials, http_client))
+}
+
+fn required_google_oauth_value(
+    cli_value: Option<&str>,
+    value_label: &str,
+    flag_name: &str,
+    env_var_name: &str,
+) -> Result<String> {
+    cli_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            JugglerError::config(format!(
+                "Missing Google OAuth {value_label}. Provide `{flag_name}` or set {env_var_name} for login and sync commands."
+            ))
+        })
+}
+
+fn required_google_oauth_value_or_skip_sync(
+    cli_value: Option<&str>,
+    value_label: &str,
+    flag_name: &str,
+    env_var_name: &str,
+) -> Result<Option<String>> {
+    match required_google_oauth_value(cli_value, value_label, flag_name, env_var_name) {
+        Ok(value) => Ok(Some(value)),
+        Err(e) => {
+            error!("{}", e);
+            error!("Skipping sync. Todos were saved prior to sync attempt.");
+            Ok(None)
+        }
+    }
 }
 
 fn maybe_persist_todos_after_sync(
@@ -58,6 +93,41 @@ fn save_todos_before_sync(todos: &mut [Todo], todos_file: &std::path::Path) -> R
     store_todos(todos, todos_file)
 }
 
+fn prepare_tui_sync_on_exit(
+    todos: &mut [Todo],
+    todos_file: &std::path::Path,
+    oauth_client_id: Option<&str>,
+    oauth_client_secret: Option<&str>,
+) -> Result<Option<(String, String)>> {
+    // Always persist local edits first so sync precondition failures do not lose data.
+    if let Err(e) = save_todos_before_sync(todos, todos_file) {
+        error!("Warning: Failed to save todos before sync: {e}");
+        return Err(e);
+    }
+
+    let Some(oauth_client_id) = required_google_oauth_value_or_skip_sync(
+        oauth_client_id,
+        "client id",
+        "--google-oauth-client-id",
+        "GOOGLE_OAUTH_CLIENT_ID",
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let Some(oauth_client_secret) = required_google_oauth_value_or_skip_sync(
+        oauth_client_secret,
+        "client secret",
+        "--google-oauth-client-secret",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((oauth_client_id, oauth_client_secret)))
+}
+
 #[derive(Parser)]
 #[command(name = "juggler")]
 #[command(about = "A TODO juggler TUI application")]
@@ -69,6 +139,25 @@ struct Cli {
         help = "Override juggler data directory (default: ~/.juggler or $JUGGLER_DIR)"
     )]
     juggler_dir: Option<std::path::PathBuf>,
+
+    #[arg(
+        long,
+        env = "GOOGLE_OAUTH_CLIENT_ID",
+        global = true,
+        value_name = "ID",
+        help = "Google OAuth desktop client id for login/sync operations (or GOOGLE_OAUTH_CLIENT_ID)"
+    )]
+    google_oauth_client_id: Option<String>,
+
+    #[arg(
+        long,
+        env = "GOOGLE_OAUTH_CLIENT_SECRET",
+        hide_env_values = true,
+        global = true,
+        value_name = "SECRET",
+        help = "Google OAuth desktop client secret for login/sync operations (or GOOGLE_OAUTH_CLIENT_SECRET)"
+    )]
+    google_oauth_client_secret: Option<String>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -103,18 +192,37 @@ async fn main() -> Result<()> {
     let env = Env::default().filter_or("RUST_LOG", "info");
     env_logger::Builder::from_env(env).init();
 
-    let cli = Cli::parse();
-    let todos_file = get_todos_file_path(cli.juggler_dir.as_deref())?;
+    let Cli {
+        juggler_dir,
+        google_oauth_client_id,
+        google_oauth_client_secret,
+        command,
+    } = Cli::parse();
+    let todos_file = get_todos_file_path(juggler_dir.as_deref())?;
+    let oauth_client_id = google_oauth_client_id.as_deref();
+    let oauth_client_secret = google_oauth_client_secret.as_deref();
 
     let cred_store = KeyringCredentialStore::new();
     let http_client = reqwest::Client::new();
 
-    match cli.command {
+    match command {
         Some(Commands::Login { port }) => {
             // OAuth browser login flow
             info!("Starting OAuth login flow...");
+            let oauth_client_id = required_google_oauth_value(
+                oauth_client_id,
+                "client id",
+                "--google-oauth-client-id",
+                "GOOGLE_OAUTH_CLIENT_ID",
+            )?;
+            let oauth_client_secret = required_google_oauth_value(
+                oauth_client_secret,
+                "client secret",
+                "--google-oauth-client-secret",
+                "GOOGLE_OAUTH_CLIENT_SECRET",
+            )?;
 
-            match run_oauth_flow(GOOGLE_OAUTH_CLIENT_ID.to_string(), port).await {
+            match run_oauth_flow(oauth_client_id, oauth_client_secret, port).await {
                 Ok(result) => {
                     println!("\n🎉 Authentication successful!");
                     match cred_store.store_refresh_token(&result.refresh_token) {
@@ -124,10 +232,14 @@ async fn main() -> Result<()> {
                             );
                             println!("You can now sync your TODOs with:");
                             println!();
-                            println!("juggler sync google-tasks");
+                            println!(
+                                "juggler --google-oauth-client-id <CLIENT_ID> --google-oauth-client-secret <CLIENT_SECRET> sync google-tasks"
+                            );
                             println!();
                             println!("Use --dry-run to preview changes:");
-                            println!("juggler sync google-tasks --dry-run");
+                            println!(
+                                "juggler --google-oauth-client-id <CLIENT_ID> --google-oauth-client-secret <CLIENT_SECRET> sync google-tasks --dry-run"
+                            );
                         }
                         Err(e) => {
                             error!("Failed to store refresh token in keyring: {e}");
@@ -161,6 +273,18 @@ async fn main() -> Result<()> {
                     debug_auth,
                 } => {
                     let mut todos = load_todos(&todos_file)?;
+                    let oauth_client_id = required_google_oauth_value(
+                        oauth_client_id,
+                        "client id",
+                        "--google-oauth-client-id",
+                        "GOOGLE_OAUTH_CLIENT_ID",
+                    )?;
+                    let oauth_client_secret = required_google_oauth_value(
+                        oauth_client_secret,
+                        "client secret",
+                        "--google-oauth-client-secret",
+                        "GOOGLE_OAUTH_CLIENT_SECRET",
+                    )?;
 
                     info!("Syncing TODOs with Google Tasks...");
                     if debug_auth {
@@ -182,8 +306,12 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    let oauth_client =
-                        create_oauth_client_from_keychain(&cred_store, http_client.clone())?;
+                    let oauth_client = create_oauth_client_from_keychain(
+                        &cred_store,
+                        http_client.clone(),
+                        &oauth_client_id,
+                        &oauth_client_secret,
+                    )?;
 
                     sync_to_tasks_with_oauth(&mut todos, oauth_client, dry_run).await?;
 
@@ -208,18 +336,24 @@ async fn main() -> Result<()> {
 
             if app.should_sync_on_exit() {
                 let mut todos = app.items();
-
-                // Always save local TODOs before attempting any sync. If the sync is slow
-                // and the user kills the process or something, we want to make sure we don't
-                // *locally* lose their changes.
-                if let Err(e) = save_todos_before_sync(&mut todos, &todos_file) {
-                    error!("Warning: Failed to save todos before sync: {e}");
-                    return Err(e);
-                }
+                let maybe_oauth_credentials = prepare_tui_sync_on_exit(
+                    &mut todos,
+                    &todos_file,
+                    oauth_client_id,
+                    oauth_client_secret,
+                )?;
+                let Some((oauth_client_id, oauth_client_secret)) = maybe_oauth_credentials else {
+                    return app_result;
+                };
 
                 info!("Syncing TODOs with Google Tasks on exit...");
 
-                match create_oauth_client_from_keychain(&cred_store, http_client) {
+                match create_oauth_client_from_keychain(
+                    &cred_store,
+                    http_client,
+                    &oauth_client_id,
+                    &oauth_client_secret,
+                ) {
                     Ok(oauth_client) => {
                         let sync_result =
                             sync_to_tasks_with_oauth(&mut todos, oauth_client, false).await;
@@ -345,6 +479,42 @@ mod tests {
     }
 
     #[test]
+    fn prepare_tui_sync_on_exit_saves_local_todos_when_oauth_flags_missing() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let todos_file = temp_dir.path().join("TODOs.toml");
+
+        let mut todos = vec![make_todo("saved-even-when-sync-skips")];
+        let result = prepare_tui_sync_on_exit(&mut todos, &todos_file, None, None)
+            .expect("missing oauth flags should skip sync, not hard-fail");
+
+        assert!(result.is_none());
+        let content = fs::read_to_string(&todos_file).expect("read saved todos");
+        assert!(content.contains("title = \"saved-even-when-sync-skips\""));
+    }
+
+    #[test]
+    fn prepare_tui_sync_on_exit_returns_oauth_credentials_when_present() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let todos_file = temp_dir.path().join("TODOs.toml");
+
+        let mut todos = vec![make_todo("saved-before-sync-credentials")];
+        let result = prepare_tui_sync_on_exit(
+            &mut todos,
+            &todos_file,
+            Some("client-id"),
+            Some("client-secret"),
+        )
+        .expect("valid oauth flags should prepare sync");
+
+        assert_eq!(
+            result,
+            Some(("client-id".to_string(), "client-secret".to_string()))
+        );
+        let content = fs::read_to_string(&todos_file).expect("read saved todos");
+        assert!(content.contains("title = \"saved-before-sync-credentials\""));
+    }
+
+    #[test]
     fn cli_parses_global_juggler_dir_without_subcommand() {
         let cli = Cli::parse_from(["juggler", "--juggler-dir", "custom-dir"]);
 
@@ -373,5 +543,95 @@ mod tests {
                 }
             })
         ));
+    }
+
+    #[test]
+    fn cli_parses_global_google_oauth_flags_with_subcommand() {
+        let cli = Cli::parse_from([
+            "juggler",
+            "--google-oauth-client-id",
+            "id-value",
+            "--google-oauth-client-secret",
+            "secret-value",
+            "sync",
+            "google-tasks",
+        ]);
+
+        assert_eq!(cli.google_oauth_client_id.as_deref(), Some("id-value"));
+        assert_eq!(
+            cli.google_oauth_client_secret.as_deref(),
+            Some("secret-value")
+        );
+    }
+
+    #[test]
+    fn cli_parses_global_google_oauth_flags_with_logout_subcommand() {
+        let cli = Cli::parse_from([
+            "juggler",
+            "logout",
+            "--google-oauth-client-id",
+            "id-value",
+            "--google-oauth-client-secret",
+            "secret-value",
+        ]);
+
+        assert_eq!(cli.google_oauth_client_id.as_deref(), Some("id-value"));
+        assert_eq!(
+            cli.google_oauth_client_secret.as_deref(),
+            Some("secret-value")
+        );
+        assert!(matches!(cli.command, Some(Commands::Logout)));
+    }
+
+    #[test]
+    fn required_google_oauth_value_accepts_trimmed_values() {
+        let client_id = required_google_oauth_value(
+            Some("  client-id-value  "),
+            "client id",
+            "--google-oauth-client-id",
+            "GOOGLE_OAUTH_CLIENT_ID",
+        )
+        .expect("id valid");
+        assert_eq!(client_id, "client-id-value");
+
+        let client_secret = required_google_oauth_value(
+            Some("  client-secret-value  "),
+            "client secret",
+            "--google-oauth-client-secret",
+            "GOOGLE_OAUTH_CLIENT_SECRET",
+        )
+        .expect("secret valid");
+        assert_eq!(client_secret, "client-secret-value");
+    }
+
+    #[test]
+    fn required_google_oauth_value_rejects_missing_or_blank_values() {
+        assert!(
+            required_google_oauth_value(
+                None,
+                "client id",
+                "--google-oauth-client-id",
+                "GOOGLE_OAUTH_CLIENT_ID",
+            )
+            .is_err()
+        );
+        assert!(
+            required_google_oauth_value(
+                Some(""),
+                "client secret",
+                "--google-oauth-client-secret",
+                "GOOGLE_OAUTH_CLIENT_SECRET",
+            )
+            .is_err()
+        );
+        assert!(
+            required_google_oauth_value(
+                Some("   "),
+                "client secret",
+                "--google-oauth-client-secret",
+                "GOOGLE_OAUTH_CLIENT_SECRET",
+            )
+            .is_err()
+        );
     }
 }

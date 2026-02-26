@@ -581,10 +581,11 @@ async fn sync_to_tasks_with_base_url(
 
 #[cfg(test)]
 mod tests {
-    /// Any test that relies on a real client id would by definition be buggy
+    /// Any test that relies on real OAuth desktop client credentials would be buggy
     /// unless it is an integration test meant to exercise the real oauth flow,
-    /// so use a fake test id here.
+    /// so use fake test values here.
     const GOOGLE_OAUTH_CLIENT_ID: &str = "test-client-id";
+    const GOOGLE_OAUTH_CLIENT_SECRET: &str = "test-client-secret";
     use super::*;
     use crate::oauth::{GoogleOAuthClient, GoogleOAuthCredentials};
     use crate::time::test_clock;
@@ -1378,6 +1379,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+            client_secret: GOOGLE_OAUTH_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
@@ -1457,6 +1459,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+            client_secret: GOOGLE_OAUTH_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
@@ -1653,6 +1656,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: GOOGLE_OAUTH_CLIENT_ID.to_string(),
+            client_secret: GOOGLE_OAUTH_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
@@ -1706,6 +1710,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: "invalid_client_id".to_string(),
+            client_secret: GOOGLE_OAUTH_CLIENT_SECRET.to_string(),
             refresh_token: "invalid_refresh_token".to_string(),
         };
 
