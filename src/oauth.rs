@@ -11,8 +11,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::config::{
-    DEFAULT_TOKEN_EXPIRY_SECS, GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_CLIENT_ID,
-    GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_TOKEN_URL, GOOGLE_TASKS_SCOPE,
+    DEFAULT_TOKEN_EXPIRY_SECS, GOOGLE_OAUTH_AUTHORIZE_URL, GOOGLE_OAUTH_TOKEN_URL,
+    GOOGLE_TASKS_SCOPE,
 };
 use crate::error::{JugglerError, Result};
 use crate::time::{SharedClock, system_clock};
@@ -21,7 +21,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use log::{error, info};
+use log::{debug, error, info};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -38,24 +38,24 @@ fn oauth_err<E: std::fmt::Display>(context: &str) -> impl FnOnce(E) -> JugglerEr
     move |e| JugglerError::oauth(format!("{context}: {e}"))
 }
 
-fn create_oauth_client(client_id: &str, token_url: &str) -> Result<BasicClient> {
+fn create_oauth_client(
+    client_id: &str,
+    client_secret: &str,
+    token_url: &str,
+) -> Result<BasicClient> {
     Ok(BasicClient::new(
         ClientId::new(client_id.to_string()),
-        Some(ClientSecret::new(GOOGLE_OAUTH_CLIENT_SECRET.to_string())),
+        Some(ClientSecret::new(client_secret.to_string())),
         AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
             .map_err(oauth_err("Invalid auth URL"))?,
         Some(TokenUrl::new(token_url.to_string()).map_err(oauth_err("Invalid token URL"))?),
     ))
 }
 
-// OAuth credentials (public desktop client) are embedded via constants in `config.rs`.
-// For native/desktop apps, Google treats clients as public and permits embedding the
-// client id and client secret with PKCE. See Google guidance:
-// https://developers.google.com/identity/protocols/oauth2/native-app
-
 #[derive(Debug, Clone)]
 pub struct GoogleOAuthCredentials {
     pub client_id: String,
+    pub client_secret: String,
     pub refresh_token: String,
 }
 
@@ -79,9 +79,13 @@ struct OAuthState {
     expected_state: String,
 }
 
-pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult> {
+pub async fn run_oauth_flow(
+    client_id: String,
+    client_secret: String,
+    port: u16,
+) -> Result<OAuthResult> {
     info!("Starting OAuth flow for Google Tasks API...");
-    info!("Client ID: {client_id}");
+    debug!("Client ID: {client_id}");
 
     // Start local HTTP server
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -93,7 +97,7 @@ pub async fn run_oauth_flow(client_id: String, port: u16) -> Result<OAuthResult>
     let redirect_uri = format!("http://localhost:{actual_port}/callback");
 
     // Set up OAuth2 client using the oauth2 crate
-    let oauth_client = create_oauth_client(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_TOKEN_URL)?
+    let oauth_client = create_oauth_client(&client_id, &client_secret, GOOGLE_OAUTH_TOKEN_URL)?
         .set_redirect_uri(
             RedirectUrl::new(redirect_uri.clone()).map_err(oauth_err("Invalid redirect URI"))?,
         );
@@ -392,9 +396,13 @@ impl GoogleOAuthClient {
     }
 
     async fn refresh_access_token(&mut self) -> Result<String> {
-        info!("Using embedded client_secret for token refresh (desktop/native client)");
+        info!("Refreshing OAuth token with configured desktop client credentials");
 
-        let oauth_client = create_oauth_client(&self.credentials.client_id, &self.oauth_token_url)?;
+        let oauth_client = create_oauth_client(
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.oauth_token_url,
+        )?;
 
         let token_result = oauth_client
             .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
@@ -425,6 +433,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const TEST_CLIENT_ID: &str = "test-client-id";
+    const TEST_CLIENT_SECRET: &str = "test-client-secret";
 
     #[tokio::test]
     async fn test_oauth_client_token_refresh() {
@@ -442,6 +451,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: TEST_CLIENT_ID.to_string(),
+            client_secret: TEST_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
@@ -466,6 +476,7 @@ mod tests {
     async fn test_oauth_client_token_caching() {
         let credentials = GoogleOAuthCredentials {
             client_id: TEST_CLIENT_ID.to_string(),
+            client_secret: TEST_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
@@ -501,6 +512,7 @@ mod tests {
 
         let credentials = GoogleOAuthCredentials {
             client_id: TEST_CLIENT_ID.to_string(),
+            client_secret: TEST_CLIENT_SECRET.to_string(),
             refresh_token: "invalid_refresh_token".to_string(),
         };
 
@@ -522,14 +534,17 @@ mod tests {
     async fn test_oauth_credentials_structure() {
         let credentials = GoogleOAuthCredentials {
             client_id: TEST_CLIENT_ID.to_string(),
+            client_secret: TEST_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
         assert_eq!(credentials.client_id, TEST_CLIENT_ID);
+        assert_eq!(credentials.client_secret, TEST_CLIENT_SECRET);
         assert_eq!(credentials.refresh_token, "test_refresh_token");
 
         let cloned_credentials = credentials.clone();
         assert_eq!(cloned_credentials.client_id, credentials.client_id);
+        assert_eq!(cloned_credentials.client_secret, credentials.client_secret);
         assert_eq!(cloned_credentials.refresh_token, credentials.refresh_token);
     }
 
@@ -537,12 +552,17 @@ mod tests {
     async fn test_oauth_client_initialization() {
         let credentials = GoogleOAuthCredentials {
             client_id: TEST_CLIENT_ID.to_string(),
+            client_secret: TEST_CLIENT_SECRET.to_string(),
             refresh_token: "test_refresh_token".to_string(),
         };
 
         let oauth_client = GoogleOAuthClient::new(credentials.clone(), reqwest::Client::new());
 
         assert_eq!(oauth_client.credentials().client_id, credentials.client_id);
+        assert_eq!(
+            oauth_client.credentials().client_secret,
+            credentials.client_secret
+        );
         assert_eq!(
             oauth_client.credentials().refresh_token,
             credentials.refresh_token
