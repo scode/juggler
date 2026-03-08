@@ -37,24 +37,20 @@ fn resolve_juggler_dir(
     env_override: Option<&std::ffi::OsStr>,
     home_dir: Option<std::path::PathBuf>,
 ) -> std::io::Result<std::path::PathBuf> {
-    if let Some(dir) = cli_override {
-        return Ok(dir.to_path_buf());
-    }
-
-    if let Some(dir) = env_override {
-        return Ok(std::path::PathBuf::from(dir));
-    }
-
-    home_dir
+    cli_override
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| env_override.map(std::path::PathBuf::from))
+        .or_else(|| home_dir.map(|home| home.join(".juggler")))
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "Unable to find home directory",
             )
         })
-        .map(|home| home.join(".juggler"))
 }
 
+/// Resolve the active juggler data directory from CLI flag, environment, or
+/// the default home-based location in that precedence order.
 pub fn get_juggler_dir(
     cli_override: Option<&std::path::Path>,
 ) -> std::io::Result<std::path::PathBuf> {
@@ -62,6 +58,7 @@ pub fn get_juggler_dir(
     resolve_juggler_dir(cli_override, env_override.as_deref(), dirs::home_dir())
 }
 
+/// Resolve the TODO storage file path within the active juggler directory.
 pub fn get_todos_file_path(
     cli_override: Option<&std::path::Path>,
 ) -> std::io::Result<std::path::PathBuf> {
