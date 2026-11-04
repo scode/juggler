@@ -1,6 +1,6 @@
 [package]
 name = "juggler"
-version = "0.2.6"
+version = "0.2.7"
 description = "TODO juggler"
 authors = ["Peter Schuller <peter.schuller@infidyne.com>"]
 license = "MIT"

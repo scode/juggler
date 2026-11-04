@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-11-04
+
+### Changed
+
+- Simplify juggler directory resolution (#251)
+- Cargo update (#256)
+- Update Rust dependencies (#262)
+- Stop pushing Homebrew formulas (#263)
+
+### Fixed
+
+- Reject compromised emSign certificates (#261)
+
 ## [0.2.6] - 2026-02-26
+
+### Changed
+
+- V0.2.6 (#246)
 
 ### Fixed
 
@@ -271,6 +288,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove spammy log message (#30)
 - Remove some code duplication. (#118)
 
+[0.2.7]: https://github.com/scode/juggler/compare/v0.2.6..v0.2.7
 [0.2.6]: https://github.com/scode/juggler/compare/v0.2.5..v0.2.6
 [0.2.5]: https://github.com/scode/juggler/compare/v0.2.4..v0.2.5
 [0.2.4]: https://github.com/scode/juggler/compare/v0.2.3..v0.2.4
