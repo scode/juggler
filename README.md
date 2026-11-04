@@ -33,6 +33,8 @@ brew install scode/dist-tap/juggler
 cargo install --path .
 ```
 
+Release maintainers: see [the Homebrew publishing migration](docs/homebrew-publishing.md) for the archive contract and coordinated switch to tap-owned formula updates.
+
 ## Quick Start
 
 1. **Run the TUI:**
