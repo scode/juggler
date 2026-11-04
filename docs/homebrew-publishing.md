@@ -1,12 +1,12 @@
 # Homebrew publishing migration
 
-Keep the publisher-switch PR unmerged until the tap's juggler updater and candidate formula have been reviewed and tested. This change prepares the handoff; it does not activate a pull-managed formula in the tap.
+Upstream formula pushing was disabled in [#263](https://github.com/scode/juggler/pull/263/changes), ahead of tap activation. Publish a patched release next, then review and test the tap's juggler updater and candidate formula against those artifacts before enabling the live pull entry.
 
 ## Publication ownership
 
 `scode/homebrew-dist-tap` will own formula updates through its [pull workflow](https://github.com/scode/homebrew-dist-tap/blob/main/docs/pull-workflow.md). In this repository, `publish-jobs = []` disables only cargo-dist's tap-push job. cargo-dist 0.30.4 still builds archives, checksums, updater executables, and the release-side `juggler.rb` artifact, and publishes GitHub releases. The generated workflow's archive builds, release-plan tests, and GitHub release creation remain in place.
 
-On 2026-11-03, [tap main at `1b2796b`](https://github.com/scode/homebrew-dist-tap/tree/1b2796b26fdbfa15151468b123e4ed786d2b0f39) had live pull entries for saltybox and treeward, but none for juggler. The existing juggler formula was still generated upstream. Review and test the tap's juggler updater and candidate before coordinating the live `pull.toml` entry with this repository's publisher switch. Keep one publisher for the formula during the handoff, and avoid cutting a release between the two activation changes.
+On 2026-11-03, [tap main at `1b2796b`](https://github.com/scode/homebrew-dist-tap/tree/1b2796b26fdbfa15151468b123e4ed786d2b0f39) had live pull entries for saltybox and treeward, but none for juggler. The existing juggler formula was still generated upstream. The upstream push was subsequently disabled by #263. The next patched release supplies the candidate for tap review and testing; activate juggler's live `pull.toml` entry only after those checks. Until then, releases publish their artifacts without updating the live Homebrew formula.
 
 Do not revoke `HOMEBREW_TAP_TOKEN` or any shared credentials as part of this change. Other upstream publishers may still need them. Removing the job's reference to the secret does not revoke the credential.
 
@@ -79,4 +79,4 @@ test do
 end
 ```
 
-For activation, bind the tap's reviewed updater, config, and candidate formula to the new patched release and its four recorded hashes. Confirm regeneration matches the candidate, and require its native install and formula-test evidence before merging the publisher switch. Coordinate the dedicated tap activation change with this PR; do not infer readiness from the presence of the generic updater alone.
+For activation, bind the tap's reviewed updater, config, and candidate formula to the new patched release and its four recorded hashes. Confirm regeneration matches the candidate, and require its native install and formula-test evidence before enabling the live pull entry. Keep tap activation in a dedicated change; do not infer readiness from the presence of the generic updater alone.
