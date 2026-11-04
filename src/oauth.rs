@@ -5,6 +5,8 @@
 //!
 //! It also provides `GoogleOAuthClient`, which refreshes access tokens from a
 //! stored refresh token and caches token state for API calls during sync.
+//! Token requests use the same reqwest/TLS stack as Google Tasks requests, with
+//! redirects disabled to keep credentials at the configured token endpoint.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,10 +25,9 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use log::{debug, error, info};
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::async_http_client;
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
-    RefreshToken, Scope, TokenResponse, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointNotSet, EndpointSet,
+    PkceCodeChallenge, RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
 };
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, oneshot};
@@ -38,18 +39,35 @@ fn oauth_err<E: std::fmt::Display>(context: &str) -> impl FnOnce(E) -> JugglerEr
     move |e| JugglerError::oauth(format!("{context}: {e}"))
 }
 
+/// Configure both endpoints so browser login and token refresh share client credentials.
+///
+/// The endpoint types guarantee that callers can authorize and exchange tokens
+/// without a separate runtime check for missing endpoint configuration.
 fn create_oauth_client(
     client_id: &str,
     client_secret: &str,
     token_url: &str,
-) -> Result<BasicClient> {
-    Ok(BasicClient::new(
-        ClientId::new(client_id.to_string()),
-        Some(ClientSecret::new(client_secret.to_string())),
-        AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
-            .map_err(oauth_err("Invalid auth URL"))?,
-        Some(TokenUrl::new(token_url.to_string()).map_err(oauth_err("Invalid token URL"))?),
-    ))
+) -> Result<BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>> {
+    Ok(BasicClient::new(ClientId::new(client_id.to_string()))
+        .set_client_secret(ClientSecret::new(client_secret.to_string()))
+        .set_auth_uri(
+            AuthUrl::new(GOOGLE_OAUTH_AUTHORIZE_URL.to_string())
+                .map_err(oauth_err("Invalid auth URL"))?,
+        )
+        .set_token_uri(
+            TokenUrl::new(token_url.to_string()).map_err(oauth_err("Invalid token URL"))?,
+        ))
+}
+
+/// Keep token requests at the configured endpoint, even if it returns a redirect.
+///
+/// Both login and refresh must use this policy: following a redirect could send
+/// authorization codes or refresh tokens to an unintended destination.
+fn create_oauth_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(oauth_err("Failed to create OAuth HTTP client"))
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +97,10 @@ struct OAuthState {
     expected_state: String,
 }
 
+/// Authorize Google Tasks access through a browser and return a refresh credential.
+///
+/// The local callback must match this login's state before its code is exchanged.
+/// Token requests do not follow HTTP redirects.
 pub async fn run_oauth_flow(
     client_id: String,
     client_secret: String,
@@ -174,10 +196,11 @@ pub async fn run_oauth_flow(
     info!("Received authorization code, exchanging for tokens...");
 
     // Exchange authorization code for tokens using oauth2 crate
+    let http_client = create_oauth_http_client()?;
     let token_result = oauth_client
         .exchange_code(AuthorizationCode::new(auth_code))
         .set_pkce_verifier(pkce_verifier)
-        .request_async(async_http_client)
+        .request_async(&http_client)
         .await
         .map_err(oauth_err("Token exchange failed"))?;
 
@@ -395,6 +418,10 @@ impl GoogleOAuthClient {
         self.token_expires_at = Some(expires_at);
     }
 
+    /// Replace cached token state only after a successful refresh response.
+    ///
+    /// Refresh requests use the same redirect restriction as the initial login,
+    /// independently of the HTTP client supplied for Google Tasks API calls.
     async fn refresh_access_token(&mut self) -> Result<String> {
         info!("Refreshing OAuth token with configured desktop client credentials");
 
@@ -404,9 +431,10 @@ impl GoogleOAuthClient {
             &self.oauth_token_url,
         )?;
 
+        let http_client = create_oauth_http_client()?;
         let token_result = oauth_client
             .exchange_refresh_token(&RefreshToken::new(self.credentials.refresh_token.clone()))
-            .request_async(async_http_client)
+            .request_async(&http_client)
             .await
             .map_err(oauth_err("OAuth token refresh failed"))?;
 
@@ -528,6 +556,50 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("OAuth token refresh failed"));
+    }
+
+    /// A token endpoint must not redirect a refresh credential to another URL.
+    ///
+    /// The OAuth HTTP client is configured separately from the Tasks API client;
+    /// this guards that restriction when changing OAuth transport dependencies.
+    #[tokio::test]
+    async fn oauth_token_refresh_rejects_redirects() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("Location", format!("{}/redirected", mock_server.uri())),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(path("/redirected"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "redirected_access_token",
+                "expires_in": 3600,
+                "token_type": "Bearer"
+            })))
+            .expect(0)
+            .mount(&mock_server)
+            .await;
+
+        let mut oauth_client = GoogleOAuthClient::new_with_custom_oauth_url(
+            GoogleOAuthCredentials {
+                client_id: TEST_CLIENT_ID.to_string(),
+                client_secret: TEST_CLIENT_SECRET.to_string(),
+                refresh_token: "test_refresh_token".to_string(),
+            },
+            reqwest::Client::new(),
+            format!("{}/token", mock_server.uri()),
+            test_clock(),
+        );
+
+        let error = oauth_client.get_access_token().await.unwrap_err();
+        assert!(error.to_string().contains("OAuth token refresh failed"));
+        assert!(oauth_client.cached_access_token().is_none());
+        assert!(oauth_client.token_expires_at().is_none());
     }
 
     #[tokio::test]
