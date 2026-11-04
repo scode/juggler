@@ -22,6 +22,10 @@ impl PromptWidget {
 }
 
 impl Widget for PromptWidget {
+    /// Clear the prompt area so shorter edits cannot leave stale text or styles.
+    ///
+    /// The prompt occupies the first row and is truncated by Unicode scalar count
+    /// to fit the area's width.
     fn render(self, area: Rect, buf: &mut Buffer) {
         for y in area.y..area.y.saturating_add(area.height) {
             for x in area.x..area.x.saturating_add(area.width) {
@@ -39,13 +43,11 @@ impl Widget for PromptWidget {
             self.text
         };
 
-        let mut x = area.x;
         let y = area.y;
-        for ch in content.chars() {
+        for (x, ch) in (area.x..).zip(content.chars()) {
             let cell = &mut buf[(x, y)];
             cell.set_symbol(ch.encode_utf8(&mut [0; 4]));
             cell.set_style(Style::default());
-            x += 1;
         }
     }
 }
